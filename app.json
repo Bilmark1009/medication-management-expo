@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Tumana",
+    "slug": "tumana",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/app_icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/testt.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app_icon.png",
+        "backgroundColor": "#000000"
+      },
+      "package": "com.i.blmrk.tumana"
+    },
+    "web": {
+      "favicon": "./assets/app_icon.png"
+    },
+    "scheme": "tumana",
+    "entryPoint": "./index.ts",
+    "extra": {
+      "eas": {
+        "projectId": "45fb52b5-a437-4ad7-8fe6-6b3e371d2106"
+      }
+    },
+    "plugins": [
+      "expo-sqlite"
+    ],
+    "owner": "i.blmrk",
+    "packagerOpts": {
+      "config": "metro.config.js"
+    }
+  }
+}
