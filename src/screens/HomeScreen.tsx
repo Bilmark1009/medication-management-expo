@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Alert, Platform, Linking } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import moment from 'moment';
@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Modal, Portal, Button, Provider } from 'react-native-paper';
 import { TextInput } from 'react-native';
+import * as SQLite from 'expo-sqlite';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { executeQuery } from '../utils/database';
 
 type Medication = {
@@ -24,6 +26,8 @@ type HomeScreenProps = {
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [userName, setUserName] = useState('');
+  const [currentUser, setCurrentUser] = useState<{ id: number; name: string; email: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [medicationsTaken, setMedicationsTaken] = useState(0);
   const [medicationsRemaining, setMedicationsRemaining] = useState(0);
   const [adherencePercentage, setAdherencePercentage] = useState(0);
@@ -38,91 +42,77 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      loadUserName(); // Ensure this function is called when the screen is focused
+      loadCurrentUser();
       loadMedicationData();
     });
+
+    // Initial load
+    loadCurrentUser();
+    loadMedicationData();
 
     return unsubscribe;
   }, [navigation]);
 
-  // Fetch the first (and assumed current) user from personal_info. If none, fallback to 'Guest'.
-  const loadUserName = async () => {
+  // Load the current user from AsyncStorage
+  const loadCurrentUser = async () => {
     try {
-      // Query the first user in the table (id = 1 or LIMIT 1)
-      const result = await executeQuery('SELECT name FROM personal_info ORDER BY id ASC LIMIT 1;', []);
-      const user = await result.getFirstAsync();
-      if (user && user.name) {
-        setUserName(user.name);
-      } else {
-        setUserName('Guest');
+      const userJson = await AsyncStorage.getItem('currentUser');
+      if (!userJson) {
+        // No user logged in, redirect to login
+        navigation.replace('Login');
+        return;
       }
+
+      const userData = JSON.parse(userJson);
+      if (!userData?.id) {
+        // Invalid user data, redirect to login
+        await AsyncStorage.removeItem('currentUser');
+        navigation.replace('Login');
+        return;
+      }
+
+      // Set the current user in state
+      setCurrentUser({
+        id: userData.id,
+        name: userData.name || 'User',
+        email: userData.email
+      });
+      setUserName(userData.name || 'User');
+      
     } catch (error) {
-      console.error('Error loading user name from SQLite:', error);
-      setUserName('Guest');
+      console.error('Error loading user data:', error);
+      // On error, clear user data and redirect to login
+      await AsyncStorage.removeItem('currentUser');
+      navigation.replace('Login');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const loadMedicationData = async () => {
+    if (!currentUser?.id) return;
+    
     try {
-      const result = await executeQuery('SELECT * FROM medications;', []);
-      const medications = await result.getAllAsync();
-      setUpcomingMedications(medications);
+      const medications = await executeQuery(
+        'SELECT * FROM medications WHERE user_id = ?;',
+        [currentUser.id]
+      ) as Medication[];
+      setUpcomingMedications(medications || []);
     } catch (error) {
       console.error('Error loading medication data from SQLite:', error);
       setUpcomingMedications([]);
     }
   };
 
-  const scheduleNotification = async (medication: Medication) => {
-    try {
-      // Parse the time string to get hours and minutes
-      let scheduledTime = new Date(medication.time);
-      const now = new Date();
 
-      console.log(`Current time: ${now.toISOString()}`);
-      console.log(`Scheduled time before adjustment: ${scheduledTime.toISOString()}`);
-
-      // If the scheduled time is in the past for today, move it to the next day
-      if (scheduledTime <= now) {
-        scheduledTime.setDate(scheduledTime.getDate() + 1);
-        console.log(`Scheduled time adjusted to next day: ${scheduledTime.toISOString()}`);
-      }
-
-      const secondsUntilScheduled = Math.floor((scheduledTime.getTime() - now.getTime()) / 1000);
-
-      console.log(`Seconds until scheduled: ${secondsUntilScheduled}`);
-
-      // Schedule the notification
-      const notificationId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'Medication Reminder',
-          body: `It's time to take your medication: ${medication.name}`,
-          sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-        },
-        trigger: {
-          seconds: secondsUntilScheduled,
-          channelId: 'medication-reminders',
-        },
-      });
-
-      console.log('Scheduled medication notification:', {
-        medication: medication.name,
-        time: medication.time,
-        notificationId,
-        secondsUntilScheduled,
-        scheduledTime: scheduledTime.toLocaleString(),
-      });
-
-      return notificationId;
-    } catch (error) {
-      console.error('Error scheduling notification:', error);
-      return null;
-    }
-  };
 
   const handleAddMedication = async () => {
     try {
+      if (!currentUser?.id) {
+        Alert.alert('Error', 'You must be logged in to add medications');
+        return;
+      }
+
       if (!name || !dosage || !frequency || !time) {
         Alert.alert('Error', 'Please fill in all fields');
         return;
@@ -138,13 +128,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
       // Insert the new medication into the SQLite database
       await executeQuery(
-        `INSERT INTO medications (id, name, dosage, frequency, time) VALUES (?, ?, ?, ?, ?);`,
+        `INSERT INTO medications (id, user_id, name, dosage, frequency, time) VALUES (?, ?, ?, ?, ?, ?);`,
         [
-          newMedication.id,
-          newMedication.name,
-          newMedication.dosage,
-          newMedication.frequency,
-          newMedication.time,
+          newMedication.id, 
+          currentUser.id,
+          newMedication.name, 
+          newMedication.dosage, 
+          newMedication.frequency, 
+          newMedication.time
         ]
       );
 
@@ -183,36 +174,110 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     return null;
   };
 
-  const renderDailyOverview = () => (
-    <View style={styles.cardContainer}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>Daily Medication Overview</Text>
-      </View>
-      <View style={styles.cardContentRow}>
-        <Text style={styles.cardContentText}>Taken: {medicationsTaken}</Text>
-        <Text style={styles.cardContentText}>Remaining: {medicationsRemaining}</Text>
-      </View>
-      <View style={styles.progressBarContainer}>
-        <View style={[styles.progressBar, { width: `${adherencePercentage}%` }]} />
-      </View>
-      <Text style={styles.cardFooterText}>{adherencePercentage}% adherence</Text>
-    </View>
-  );
-
-  const renderUpcomingMedications = () => (
-    <View style={styles.cardContainer}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>Upcoming Medications</Text>
-      </View>
-      {upcomingMedications.map((medication, index) => (
-        <View key={index} style={styles.medicationCard}>
-          <Text style={styles.medicationName}>{medication.name}</Text>
-          <Text style={styles.medicationDetails}>{medication.dosage} - {medication.frequency}</Text>
-          <Text style={styles.medicationTime}>{medication.time}</Text>
+  const renderDailyOverview = () => {
+    const totalMeds = medicationsTaken + medicationsRemaining;
+    const adherenceColor = adherencePercentage >= 80 ? '#4CAF50' : adherencePercentage >= 50 ? '#FFC107' : '#F44336';
+    const cardBackground = '#1E1E1E';
+    const textPrimary = '#FFFFFF';
+    const textSecondary = '#A0A0A0';
+    
+    return (
+      <View style={[styles.dashboardContainer, { backgroundColor: cardBackground }]}>
+        <View style={styles.dashboardHeader}>
+          <Text style={[styles.dashboardTitle, { color: textPrimary }]}>Today's Meds</Text>
         </View>
-      ))}
-    </View>
-  );
+        
+        <View style={styles.statsContainer}>
+          <View style={styles.statRow}>
+            <View style={styles.statItem}>
+              <View style={[styles.statPill, { backgroundColor: 'rgba(76, 175, 80, 0.2)' }]}>
+                <Ionicons name="checkmark-circle" size={14} color="#4CAF50" />
+              </View>
+              <View>
+                <Text style={[styles.statValue, { color: textPrimary }]}>{medicationsTaken}</Text>
+                <Text style={[styles.statLabel, { color: textSecondary }]}>Taken</Text>
+              </View>
+            </View>
+            
+            <View style={styles.statItem}>
+              <View style={[styles.statPill, { backgroundColor: 'rgba(255, 160, 0, 0.2)' }]}>
+                <Ionicons name="time-outline" size={14} color="#FFA000" />
+              </View>
+              <View>
+                <Text style={[styles.statValue, { color: textPrimary }]}>{medicationsRemaining}</Text>
+                <Text style={[styles.statLabel, { color: textSecondary }]}>Remaining</Text>
+              </View>
+            </View>
+            
+            <View style={styles.statItem}>
+              <View style={[styles.statPill, { backgroundColor: 'rgba(25, 118, 210, 0.2)' }]}>
+                <Ionicons name="medical-outline" size={14} color="#1976D2" />
+              </View>
+              <View>
+                <Text style={[styles.statValue, { color: textPrimary }]}>{totalMeds}</Text>
+                <Text style={[styles.statLabel, { color: textSecondary }]}>Total</Text>
+              </View>
+            </View>
+          </View>
+          
+          <View style={styles.progressSection}>
+            <View style={styles.progressHeader}>
+              <Text style={[styles.progressTitle, { color: textSecondary }]}>Adherence</Text>
+              <Text style={[styles.progressPercentage, { color: adherenceColor }]}>
+                {adherencePercentage}%
+              </Text>
+            </View>
+            <View style={[styles.progressBarContainer, { backgroundColor: '#333333' }]}>
+              <View 
+                style={[
+                  styles.progressBar, 
+                  { 
+                    width: `${Math.min(adherencePercentage, 100)}%`,
+                    backgroundColor: adherenceColor
+                  }
+                ]} 
+              />
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderUpcomingMedications = () => {
+    const formatTime = (dateString: string) => {
+      try {
+        // Try to parse the date string
+        const date = new Date(dateString);
+        // Return formatted time in 12-hour format with AM/PM
+        return date.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+      } catch (error) {
+        console.error('Error formatting time:', error);
+        return dateString; // Return original if parsing fails
+      }
+    };
+
+    return (
+      <View style={styles.cardContainer}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Upcoming Medications</Text>
+        </View>
+        {upcomingMedications.map((medication, index) => (
+          <View key={index} style={styles.medicationCard}>
+            <Text style={styles.medicationName}>{medication.name}</Text>
+            <Text style={styles.medicationDetails}>{medication.dosage} - {medication.frequency}</Text>
+            <Text style={styles.medicationTime}>
+              {formatTime(medication.time)}
+            </Text>
+          </View>
+        ))}
+      </View>
+    );
+  };
 
   const renderAddMedicationModal = () => (
     <Portal>
@@ -309,104 +374,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     </Portal>
   );
 
-  const testScheduledNotifications = async () => {
-    try {
-      // Cancel all existing notifications first
-      await Notifications.cancelAllScheduledNotificationsAsync();
-      console.log('Cancelled all existing notifications before scheduling new ones');
 
-      // Calculate future times
-      const now = new Date();
-      const fiveSecondsFromNow = new Date(now.getTime() + 5000);
-      const oneMinuteFromNow = new Date(now.getTime() + 60000);
-
-      // Schedule notification for 1 minute from now
-      const testNotificationId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'Test Notification',
-          body: 'This is a test notification scheduled for 1 minute from now',
-          sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-        },
-        trigger: {
-          seconds: 60,
-          channelId: 'medication-reminders',
-        },
-      });
-
-      console.log('First notification scheduled with ID:', testNotificationId, 'for time:', oneMinuteFromNow.toISOString());
-
-      // Schedule notification for 5 seconds from now
-      const quickTestNotificationId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'Test Medication Reminder',
-          body: 'This is a test notification for your medication reminder!',
-          sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-        },
-        trigger: {
-          seconds: 5,
-          channelId: 'medication-reminders',
-        },
-      });
-
-      console.log('Second notification scheduled with ID:', quickTestNotificationId, 'for time:', fiveSecondsFromNow.toISOString());
-
-      // Set up a listener for notification received
-      const subscription = Notifications.addNotificationReceivedListener(notification => {
-        const receivedTime = new Date().toISOString();
-        console.log('Notification received:', {
-          id: notification.request.identifier,
-          receivedTime,
-          content: notification.request.content
-        });
-      });
-
-      Alert.alert(
-        'Test Notifications Scheduled',
-        'Test notifications will be sent in 5 seconds and 1 minute. Check your device notifications.',
-        [
-          {
-            text: 'View Scheduled',
-            onPress: async () => {
-              const notifications = await Notifications.getAllScheduledNotificationsAsync();
-              console.log('Current scheduled notifications:', notifications.map(n => ({
-                id: n.identifier,
-                content: n.content,
-                currentTime: new Date().toISOString()
-              })));
-              Alert.alert(
-                'Scheduled Notifications',
-                `Found ${notifications.length} scheduled notifications. Check console for details.`
-              );
-            },
-          },
-          {
-            text: 'Cancel All',
-            onPress: async () => {
-              await Notifications.cancelAllScheduledNotificationsAsync();
-              subscription.remove();
-              console.log('Cancelled all notifications');
-              Alert.alert('Success', 'All notifications cancelled');
-            },
-          },
-          {
-            text: 'OK',
-            style: 'cancel',
-            onPress: () => {
-              // Remove the listener after 2 minutes
-              setTimeout(() => {
-                subscription.remove();
-              }, 120000);
-            },
-          },
-        ]
-      );
-    } catch (error) {
-      console.error('Error testing notifications:', error);
-      Alert.alert('Error', 'Failed to schedule test notifications');
-    }
-  };
 
   return (
     <Provider>
@@ -415,12 +383,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           <View style={styles.headerContainer}>
             <Text style={styles.greeting}>Hello, {userName}!</Text>
             <Text style={styles.subHeader}>Today is {moment().format('dddd, MMMM D, YYYY')}</Text>
-            <TouchableOpacity
-              style={styles.testButton}
-              onPress={testScheduledNotifications}
-            >
-              <Text style={styles.testButtonText}>Test Notifications</Text>
-            </TouchableOpacity>
+
           </View>
           <FlatList
             data={[{ key: 'header' }]}
@@ -448,6 +411,97 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  dashboardContainer: {
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#333333',
+    backgroundColor: '#1E1E1E',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dashboardHeader: {
+    marginBottom: 12,
+  },
+  dashboardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  dashboardSubtitle: {
+    fontSize: 14,
+    color: '#666',
+  },
+  statsContainer: {
+    flexDirection: 'column',
+  },
+  statRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+
+  statValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    marginLeft: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  statPill: {
+    padding: 6,
+    borderRadius: 8,
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressSection: {
+    marginTop: 12,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  progressTitle: {
+    fontSize: 14,
+    color: '#555',
+    fontWeight: '600',
+  },
+  progressPercentage: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  progressBarContainer: {
+    height: 4,
+    backgroundColor: '#333333',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginVertical: 8,
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  progressFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+
   container: {
     flex: 1,
     padding: 16,

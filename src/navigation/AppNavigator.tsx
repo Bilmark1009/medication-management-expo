@@ -9,6 +9,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import VerifyHashScreen from '../screens/VerifyHashScreen';
 import TabNavigator from './TabNavigator';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import PersonalInformationScreen from '../screens/PersonalInformationScreen';
@@ -68,6 +70,29 @@ const AppNavigator = () => {
         />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
+        <Stack.Screen 
+          name="ForgotPassword" 
+          component={ForgotPasswordScreen}
+          options={{
+            headerShown: true,
+            title: 'Reset Password',
+            headerStyle: {
+              backgroundColor: '#000',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+          }}
+        />
+        <Stack.Screen 
+          name="VerifyHash" 
+          component={VerifyHashScreen as React.ComponentType<any>}
+          options={{
+            headerShown: false,
+            gestureEnabled: false,
+          }}
+        />
         <Stack.Screen name="MainApp" component={TabNavigator} />
         <Stack.Screen 
           name="PersonalInformation" 

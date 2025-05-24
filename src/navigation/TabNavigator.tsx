@@ -7,8 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 // Import all screens
 import HomeScreen from '../screens/HomeScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import AddMedicationScreen from '../screens/AddMedicationScreen';
-import ScheduleScreen from '../screens/ScheduleScreen';
+import AddMedicationModal from '../screens/AddMedicationModal';
+import MedicationScreen from '../screens/MedicationScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import PersonalInformationScreen from '../screens/PersonalInformationScreen';
 import EmergencyContactsScreen from '../screens/EmergencyContactsScreen';
@@ -41,7 +41,14 @@ function AddStackNavigator() {
         headerShown: false,
       }}
     >
-      <AddStack.Screen name="AddMedicationModal" component={AddMedicationScreen} />
+      <AddStack.Screen 
+        name="AddMedicationModal" 
+        component={AddMedicationModal}
+        options={{
+          presentation: 'modal',
+          title: 'Add Medication'
+        }}
+      />
     </AddStack.Navigator>
   );
 }
@@ -68,12 +75,13 @@ export default function TabNavigator() {
         }}
       />
       <Tab.Screen
-        name="Schedule"
-        component={ScheduleScreen}
+        name="Medications"
+        component={MedicationScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar" size={size} color={color} />
+            <Ionicons name="medkit" size={size} color={color} />
           ),
+          title: 'Medications',
         }}
       />
       <Tab.Screen

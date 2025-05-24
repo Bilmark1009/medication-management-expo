@@ -4,13 +4,20 @@ export type RootStackParamList = {
   Landing: undefined;
   Login: undefined;
   Register: undefined;
+  ForgotPassword: undefined;
+  VerifyHash: { 
+    email: string; 
+    password: string;
+    fromRegistration?: boolean;
+  };
   MainApp: undefined;
   Home: undefined;
   Profile: undefined;
   AddMedication: { onAddMedication?: (medication: Medication) => void };
+  AddMedicationModal: undefined;
   MedicationList: undefined;
   MedicationDetails: { medicationId: string };
-  Schedule: undefined;
+  Medication: undefined;
   History: undefined;
   PersonalInformation: undefined;
   EmergencyContacts: undefined;

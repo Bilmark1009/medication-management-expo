@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,12 +13,18 @@ import {
   StatusBar,
   Image,
   Animated,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import { Ionicons } from '@expo/vector-icons';
+import { createUser, findUserByEmail } from '../utils/database';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { resetLoginAttempts } from '../utils/authLimiter';
+import { checkPasswordStrength, generateSecurePassword, isPasswordExposed, isPasswordSimilar, PasswordStrengthResult } from '../utils/passwordUtils';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 type RegisterScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Register'>;
 
@@ -34,17 +40,108 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [fadeAnim, setFadeAnim] = useState(new Animated.Value(1));
-  const [scaleAnim, setScaleAnim] = useState(new Animated.Value(1));
+  const [fadeAnim] = useState(new Animated.Value(1));
+  const [scaleAnim] = useState(new Animated.Value(1));
+  const [passwordStrength, setPasswordStrength] = useState<PasswordStrengthResult | null>(null);
+  const [isCheckingPassword, setIsCheckingPassword] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardVisible(true);
+    });
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+    });
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
 
+  const handlePasswordChange = (text: string) => {
+    setPassword(text);
+    if (text.length > 0) {
+      const strength = checkPasswordStrength(text);
+      setPasswordStrength(strength);
+    } else {
+      setPasswordStrength(null);
+    }
+  };
+
+  const getPasswordStrengthColor = (score: number): string => {
+    if (score < 40) return '#FF3B30'; // Red
+    if (score < 70) return '#FF9500'; // Orange
+    return '#00C851'; // Green
+  };
+
+  const renderPasswordStrengthMeter = () => {
+    if (!passwordStrength) return null;
+    
+    const strengthLabel = passwordStrength.score < 3 ? 'Weak' : 
+                         passwordStrength.score < 4 ? 'Moderate' : 'Strong';
+    const mainSuggestion = passwordStrength.suggestions[0];
+    const strengthColor = getPasswordStrengthColor(passwordStrength.score);
+
+    return (
+      <View style={styles.strengthMeterContainer}>
+        <View style={styles.strengthMeterRow}>
+          <View style={styles.strengthMeter}>
+            <View 
+              style={[
+                styles.strengthMeterFill, 
+                { 
+                  width: `${Math.max(10, passwordStrength.score * 20)}%`,
+                  backgroundColor: strengthColor
+                }
+              ]} 
+            />
+          </View>
+          <Text style={[styles.strengthText, { color: strengthColor }]}>
+            {strengthLabel}
+          </Text>
+        </View>
+        
+        {mainSuggestion && (
+          <Text style={styles.suggestionText}>
+            {mainSuggestion}
+          </Text>
+        )}
+      </View>
+    );
+  };
+
   const handleRegister = async () => {
     if (!name || !email || !password || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    // Check password strength
+    const strengthCheck = checkPasswordStrength(password);
+    if (!strengthCheck.valid) {
+      Alert.alert('Weak Password', strengthCheck.message);
+      return;
+    }
+
+    // Check if password is exposed in breaches
+    const isExposed = await isPasswordExposed(password);
+    if (isExposed) {
+      Alert.alert(
+        'Security Risk',
+        'This password has been exposed in data breaches. Please choose a different password.'
+      );
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
       return;
     }
 
@@ -65,28 +162,41 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
 
     setIsLoading(true);
     try {
-      const userData = {
-        name,
-        email,
-        password,
-      };
-      await AsyncStorage.setItem('user', JSON.stringify(userData));
+      // Check if user already exists
+      const existingUser = await findUserByEmail(email);
+      if (existingUser) {
+        Alert.alert('Error', 'An account with this email already exists');
+        return;
+      }
+
+      // Create new user in SQLite
+      const newUser = await createUser(name, email, password);
       
-      // Show success message
-      Alert.alert(
-        'Registration Successful',
-        'Your account has been created successfully. Please login to continue.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Navigate to login screen
-              navigation.replace('Login');
-            }
-          }
-        ]
-      );
+      if (!newUser) {
+        throw new Error('Failed to create user');
+      }
+
+      // Store user session
+      await AsyncStorage.setItem('isLoggedIn', 'true');
+      await AsyncStorage.setItem('currentUser', JSON.stringify({
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email
+      }));
+
+      if (newUser) {
+        // Reset any existing login attempts for this email
+        await resetLoginAttempts();
+        
+        // Navigate to VerifyHash screen with fromRegistration flag
+        navigation.replace('VerifyHash', { 
+          email, 
+          password,
+          fromRegistration: true 
+        });
+      }
     } catch (error) {
+      console.error('Registration error:', error);
       Alert.alert('Error', 'Failed to register. Please try again.');
     } finally {
       setIsLoading(false);
@@ -119,136 +229,157 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
   }, [fadeAnim, scaleAnim]);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-    >
-      <StatusBar barStyle="light-content" />
-      <LinearGradient
-        colors={['#000000', '#000000']}
-        style={styles.gradient}
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
       >
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+        <StatusBar barStyle="light-content" />
+        <LinearGradient
+          colors={['#000000', '#000000']}
+          style={styles.gradient}
         >
-          <Animated.View 
-            style={[
-              styles.header,
-              {
-                opacity: fadeAnim,
-                transform: [{ scale: scaleAnim }]
-              }
+          <ScrollView 
+            contentContainerStyle={[
+              styles.scrollContent,
+              keyboardVisible && styles.scrollContentKeyboardOpen
             ]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
           >
-            <View style={styles.logoContainer}>
-              <Image
-                source={require('../../assets/testt.png')}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            </View>
-            <Text style={styles.tagline}>Your Pill, On Time, Every Time</Text>
-          </Animated.View>
-
-          <View style={styles.formContainer}>
-            <View style={styles.form}>
-              <View style={styles.inputGroup}>
-                <Ionicons name="person-outline" size={20} color="#FF0000" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  value={name}
-                  onChangeText={setName}
-                  placeholder="Full Name"
-                  placeholderTextColor="#666"
-                  autoCapitalize="words"
+            <Animated.View 
+              style={[
+                styles.header,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ scale: scaleAnim }]
+                }
+              ]}
+            >
+              <View style={styles.logoContainer}>
+                <Image
+                  source={require('../../assets/testt.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
                 />
               </View>
+              <Text style={styles.tagline}>Your Pill, On Time, Every Time</Text>
+            </Animated.View>
 
-              <View style={styles.inputGroup}>
-                <Ionicons name="mail-outline" size={20} color="#FF0000" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="Email"
-                  placeholderTextColor="#666"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Ionicons name="lock-closed-outline" size={20} color="#FF0000" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Password"
-                  placeholderTextColor="#666"
-                  secureTextEntry={!showPassword}
-                />
-                <TouchableOpacity
-                  style={styles.eyeIcon}
-                  onPress={() => setShowPassword(!showPassword)}
-                >
-                  <Ionicons
-                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={20}
-                    color="#FF0000"
+            <View style={styles.formContainer}>
+              <View style={styles.form}>
+                <View style={styles.inputGroup}>
+                  <Ionicons name="person-outline" size={20} color="#FF0000" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="Full Name"
+                    placeholderTextColor="#666"
+                    autoCapitalize="words"
                   />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Ionicons name="mail-outline" size={20} color="#FF0000" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="Email"
+                    placeholderTextColor="#666"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View>
+                  <View style={styles.inputGroup}>
+                    <Ionicons name="lock-closed-outline" size={20} color="#FF0000" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Password"
+                      placeholderTextColor="#666"
+                      secureTextEntry={!showPassword}
+                      value={password}
+                      onChangeText={handlePasswordChange}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      textContentType="newPassword"
+                      autoComplete="new-password"
+                      importantForAutofill="no"
+                    />
+                    <TouchableOpacity
+                      style={styles.eyeIcon}
+                      onPress={() => setShowPassword(!showPassword)}
+                    >
+                      <Ionicons 
+                        name={showPassword ? 'eye-off' : 'eye'} 
+                        size={20} 
+                        color="#666" 
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  {password && (
+                    <View style={styles.passwordFeedback}>
+                      {renderPasswordStrengthMeter()}
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#FF0000" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Confirm Password"
+                    placeholderTextColor="#666"
+                    secureTextEntry={!showConfirmPassword}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    textContentType="newPassword"
+                    importantForAutofill="no"
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    <Ionicons 
+                      name={showConfirmPassword ? 'eye-off' : 'eye'} 
+                      size={20} 
+                      color="#666" 
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.registerButton, isLoading && styles.registerButtonDisabled]}
+                  onPress={handleRegister}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#000000" />
+                  ) : (
+                    <Text style={styles.registerButtonText}>Create Account</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.loginLink}
+                  onPress={() => navigation.navigate('Login')}
+                >
+                  <Text style={styles.loginLinkText}>
+                    Already have an account? <Text style={styles.loginLinkTextBold}>Sign In</Text>
+                  </Text>
                 </TouchableOpacity>
               </View>
-
-              <View style={styles.inputGroup}>
-                <Ionicons name="lock-closed-outline" size={20} color="#FF0000" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  placeholder="Confirm Password"
-                  placeholderTextColor="#666"
-                  secureTextEntry={!showConfirmPassword}
-                />
-                <TouchableOpacity
-                  style={styles.eyeIcon}
-                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                >
-                  <Ionicons
-                    name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={20}
-                    color="#FF0000"
-                  />
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.registerButton, isLoading && styles.registerButtonDisabled]}
-                onPress={handleRegister}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#000000" />
-                ) : (
-                  <Text style={styles.registerButtonText}>Create Account</Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.loginLink}
-                onPress={() => navigation.navigate('Login')}
-              >
-                <Text style={styles.loginLinkText}>
-                  Already have an account? <Text style={styles.loginLinkTextBold}>Sign In</Text>
-                </Text>
-              </TouchableOpacity>
             </View>
-          </View>
-        </ScrollView>
-      </LinearGradient>
-    </KeyboardAvoidingView>
+          </ScrollView>
+        </LinearGradient>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 };
 
@@ -263,6 +394,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
+    paddingBottom: 20,
+  },
+  scrollContentKeyboardOpen: {
+    paddingBottom: 300, // Extra space when keyboard is open
   },
   header: {
     alignItems: 'center',
@@ -331,8 +466,8 @@ const styles = StyleSheet.create({
   },
   eyeIcon: {
     padding: 10,
-    color: '#FF0000',
   },
+
   registerButton: {
     backgroundColor: '#FF0000',
     height: 50,
@@ -369,6 +504,47 @@ const styles = StyleSheet.create({
     color: '#FF0000',
     fontWeight: 'bold',
   },
+  passwordFeedback: {
+    marginTop: 4,
+    width: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    padding: 6,
+    borderRadius: 4,
+    borderLeftWidth: 2,
+    borderLeftColor: '#FF3B30',
+  },
+  strengthMeterContainer: {
+    width: '100%',
+  },
+  strengthMeterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  strengthMeter: {
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 2,
+    flex: 1,
+    marginRight: 8,
+    overflow: 'hidden',
+  },
+  strengthMeterFill: {
+    height: '100%',
+    borderRadius: 2,
+    width: '0%', // Default width, will be overridden by inline style
+  },
+  strengthText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  suggestionText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: 2,
+  },
 });
 
-export default RegisterScreen; 
+export default RegisterScreen;

@@ -5,11 +5,19 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StackScreenProps } from '@react-navigation/stack';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { executeQuery } from '../utils/database';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Update Props type to use StackScreenProps
-export type Props = StackScreenProps<RootStackParamList, 'AddMedication'>;
+type AddMedicationScreenProps = {
+  navigation: any;
+  route: {
+    params?: {
+      onAddMedication?: (medication: Medication) => void;
+    };
+  };
+};
 
-const AddMedicationScreen: React.FC<Props> = ({ navigation, route }) => {
+const AddMedicationScreen: React.FC<AddMedicationScreenProps> = ({ navigation, route }) => {
   const [name, setName] = useState('');
   const [dosage, setDosage] = useState('');
   const [frequency, setFrequency] = useState('');
@@ -25,6 +33,14 @@ const AddMedicationScreen: React.FC<Props> = ({ navigation, route }) => {
 
     setIsLoading(true);
 
+    // Get current user from AsyncStorage
+    const currentUser = JSON.parse(await AsyncStorage.getItem('currentUser') || '{}');
+    if (!currentUser?.id) {
+      Alert.alert('Error', 'User not logged in');
+      setIsLoading(false);
+      return;
+    }
+
     const newMedication: Medication = {
       id: Date.now().toString(),
       name,
@@ -37,9 +53,10 @@ const AddMedicationScreen: React.FC<Props> = ({ navigation, route }) => {
     try {
       // Insert the new medication into the SQLite database
       await executeQuery(
-        `INSERT INTO medications (id, name, dosage, frequency, time, instructions) VALUES (?, ?, ?, ?, ?, ?);`,
+        `INSERT INTO medications (id, user_id, name, dosage, frequency, time, instructions) VALUES (?, ?, ?, ?, ?, ?, ?);`,
         [
           newMedication.id,
+          currentUser.id,
           newMedication.name,
           newMedication.dosage,
           newMedication.frequency,

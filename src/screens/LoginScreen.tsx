@@ -15,10 +15,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import { Ionicons } from '@expo/vector-icons';
+import { verifyUser } from '../utils/database';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { checkLoginAttempts, recordFailedLoginAttempt, resetLoginAttempts } from '../utils/authLimiter';
 
 type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -46,27 +48,49 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
     }
 
     setIsLoading(true);
+    
     try {
-      const userData = await AsyncStorage.getItem('user');
-      if (!userData) {
-        Alert.alert('Error', 'No account found. Please register first.');
+      // Check if account is locked
+      const { isLockedOut, remainingTime } = await checkLoginAttempts();
+      if (isLockedOut && remainingTime) {
+        const minutes = Math.ceil(remainingTime / 60);
+        Alert.alert(
+          'Account Locked',
+          `Too many failed attempts. Please try again in ${minutes} minute${minutes > 1 ? 's' : ''}.`,
+          [{ text: 'OK' }]
+        );
+        setIsLoading(false);
         return;
       }
 
-      const user = JSON.parse(userData);
-      if (user.email !== email || user.password !== password) {
-        Alert.alert('Error', 'Invalid email or password');
+      // Verify user credentials against SQLite database
+      const user = await verifyUser(email, password);
+      if (!user) {
+        // Record failed attempt
+        const { isLockedOut, remainingAttempts } = await recordFailedLoginAttempt();
+        
+        if (isLockedOut) {
+          Alert.alert(
+            'Account Locked',
+            'Too many failed attempts. Please try again in 15 minutes.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Error', 
+            `Invalid email or password. ${remainingAttempts} ${remainingAttempts === 1 ? 'attempt' : 'attempts'} remaining.`
+          );
+        }
         return;
       }
-
-      await AsyncStorage.setItem('isLoggedIn', 'true');
-      await AsyncStorage.setItem('currentUser', JSON.stringify({
-        name: user.name,
-        email: user.email,
-      }));
       
-      navigation.replace('MainApp');
+      // Reset failed attempts on successful login
+      await resetLoginAttempts();
+
+      // Navigate to VerifyHash screen to show hashed password
+      navigation.replace('VerifyHash', { email, password });
     } catch (error) {
+      console.error('Login error:', error);
       Alert.alert('Error', 'Failed to login. Please try again.');
     } finally {
       setIsLoading(false);
@@ -139,7 +163,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity style={styles.forgotPassword}>
+              <TouchableOpacity
+                style={styles.forgotPasswordButton}
+                onPress={() => navigation.navigate('ForgotPassword')}
+              >
                 <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
 
@@ -250,7 +277,7 @@ const styles = StyleSheet.create({
   eyeIcon: {
     padding: 10,
   },
-  forgotPassword: {
+  forgotPasswordButton: {
     alignSelf: 'flex-end',
     marginBottom: 20,
   },
