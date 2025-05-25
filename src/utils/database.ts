@@ -29,8 +29,11 @@ export const initializeDatabase = async () => {
     `);
 
     await db.execAsync(`
+      DROP TABLE IF EXISTS medications;
+    `);
+    await db.execAsync(`
       CREATE TABLE IF NOT EXISTS medications (
-        id TEXT PRIMARY KEY NOT NULL,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         dosage TEXT NOT NULL,

@@ -19,12 +19,11 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
-import { Ionicons } from '@expo/vector-icons';
 import { createUser, findUserByEmail } from '../utils/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resetLoginAttempts } from '../utils/authLimiter';
 import { checkPasswordStrength, generateSecurePassword, isPasswordExposed, isPasswordSimilar, PasswordStrengthResult } from '../utils/passwordUtils';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 
 type RegisterScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Register'>;
 
@@ -44,6 +43,8 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
   const [scaleAnim] = useState(new Animated.Value(1));
   const [passwordStrength, setPasswordStrength] = useState<PasswordStrengthResult | null>(null);
   const [isCheckingPassword, setIsCheckingPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [termsError, setTermsError] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   useEffect(() => {
@@ -75,39 +76,51 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
     }
   };
 
-  const getPasswordStrengthColor = (score: number): string => {
-    if (score < 40) return '#FF3B30'; // Red
-    if (score < 70) return '#FF9500'; // Orange
-    return '#00C851'; // Green
-  };
-
   const renderPasswordStrengthMeter = () => {
     if (!passwordStrength) return null;
     
-    const strengthLabel = passwordStrength.score < 3 ? 'Weak' : 
-                         passwordStrength.score < 4 ? 'Moderate' : 'Strong';
-    const mainSuggestion = passwordStrength.suggestions[0];
-    const strengthColor = getPasswordStrengthColor(passwordStrength.score);
+    // The score is already 0-100 from checkPasswordStrength
+    const strengthPercentage = Math.min(100, Math.max(0, passwordStrength.score));
+    
+    // Determine strength level and color
+    let strengthLabel = 'Very Weak';
+    let strengthColor = '#FF3B30';
+    
+    if (strengthPercentage < 20) {
+      strengthLabel = 'Very Weak';
+      strengthColor = '#FF3B30';
+    } else if (strengthPercentage < 40) {
+      strengthLabel = 'Weak';
+      strengthColor = '#FF9500';
+    } else if (strengthPercentage < 60) {
+      strengthLabel = 'Fair';
+      strengthColor = '#FFCC00';
+    } else if (strengthPercentage < 80) {
+      strengthLabel = 'Strong';
+      strengthColor = '#34C759';
+    } else {
+      strengthLabel = 'Very Strong';
+      strengthColor = '#1a8cff';
+    }
+    
+    const mainSuggestion = passwordStrength.suggestions?.[0];
 
     return (
-      <View style={styles.strengthMeterContainer}>
-        <View style={styles.strengthMeterRow}>
-          <View style={styles.strengthMeter}>
-            <View 
-              style={[
-                styles.strengthMeterFill, 
-                { 
-                  width: `${Math.max(10, passwordStrength.score * 20)}%`,
-                  backgroundColor: strengthColor
-                }
-              ]} 
-            />
-          </View>
-          <Text style={[styles.strengthText, { color: strengthColor }]}>
-            {strengthLabel}
-          </Text>
+      <View style={styles.passwordFeedback}>
+        <View style={styles.strengthMeter}>
+          <View 
+            style={[
+              styles.strengthMeterFill, 
+              { 
+                width: `${strengthPercentage}%`,
+                backgroundColor: strengthColor
+              }
+            ]} 
+          />
         </View>
-        
+        <Text style={[styles.strengthText, { color: strengthColor }]}>
+          {strengthLabel}
+        </Text>
         {mainSuggestion && (
           <Text style={styles.suggestionText}>
             {mainSuggestion}
@@ -118,8 +131,13 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
   };
 
   const handleRegister = async () => {
-    if (!name || !email || !password || !confirmPassword) {
+    if (!name.trim() || !email.trim() || !password || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (!acceptedTerms) {
+      setTermsError('You must accept the terms and conditions');
       return;
     }
 
@@ -354,10 +372,34 @@ const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
                   </TouchableOpacity>
                 </View>
 
+                <View style={styles.termsContainer}>
+                  <TouchableOpacity 
+                    style={styles.checkboxContainer}
+                    onPress={() => {
+                      setAcceptedTerms(!acceptedTerms);
+                      setTermsError('');
+                    }}
+                  >
+                    <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
+                      {acceptedTerms && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+                    </View>
+                    <Text style={styles.termsText}>
+                      I agree to the 
+                      <Text 
+                        style={styles.termsLink}
+                        onPress={() => navigation.navigate('TermsAndConditions')}
+                      >
+                        {' '}Terms and Conditions
+                      </Text>
+                    </Text>
+                  </TouchableOpacity>
+                  {termsError ? <Text style={styles.errorText}>{termsError}</Text> : null}
+                </View>
+
                 <TouchableOpacity
-                  style={[styles.registerButton, isLoading && styles.registerButtonDisabled]}
+                  style={[styles.registerButton, (isLoading || !acceptedTerms) && styles.registerButtonDisabled]}
                   onPress={handleRegister}
-                  disabled={isLoading}
+                  disabled={isLoading || !acceptedTerms}
                 >
                   {isLoading ? (
                     <ActivityIndicator color="#000000" />
@@ -474,7 +516,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 10,
     shadowColor: '#FF0000',
     shadowOffset: {
       width: 0,
@@ -485,10 +527,10 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   registerButtonDisabled: {
-    backgroundColor: '#8B7355',
+    backgroundColor: '#4D0000',
   },
   registerButtonText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -505,45 +547,67 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   passwordFeedback: {
-    marginTop: 4,
-    width: '100%',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    padding: 6,
-    borderRadius: 4,
-    borderLeftWidth: 2,
-    borderLeftColor: '#FF3B30',
-  },
-  strengthMeterContainer: {
-    width: '100%',
-  },
-  strengthMeterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
+    marginTop: 8,
+    marginBottom: 12,
   },
   strengthMeter: {
     height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: '#333333',
     borderRadius: 2,
-    flex: 1,
-    marginRight: 8,
+    marginBottom: 4,
     overflow: 'hidden',
   },
   strengthMeterFill: {
     height: '100%',
     borderRadius: 2,
-    width: '0%', // Default width, will be overridden by inline style
   },
   strengthText: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginLeft: 6,
+    fontSize: 12,
+    marginBottom: 4,
   },
   suggestionText: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 11,
-    lineHeight: 14,
-    marginTop: 2,
+    fontSize: 12,
+    color: '#FF9500',
+    fontStyle: 'italic',
+  },
+  termsContainer: {
+    marginTop: 15,
+    marginBottom: 20,
+    width: '100%',
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FF0000',
+    marginRight: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: '#FF0000',
+  },
+  termsText: {
+    color: '#CCCCCC',
+    fontSize: 14,
+    flex: 1,
+    lineHeight: 20,
+  },
+  termsLink: {
+    color: '#FF0000',
+    textDecorationLine: 'underline',
+  },
+  errorText: {
+    color: '#FF4444',
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 30,
   },
 });
 

@@ -16,7 +16,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import { Ionicons } from '@expo/vector-icons';
 import { findUserByEmail, updateUserPassword } from '../utils/database';
-import { checkPasswordStrength, isPasswordExposed, isPasswordSimilar } from '../utils/passwordUtils';
+import { checkPasswordStrength, isPasswordExposed, isPasswordSimilar, PasswordStrengthResult } from '../utils/passwordUtils';
 
 interface ForgotPasswordScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'ForgotPassword'>;
@@ -26,12 +26,79 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
   const [email, setEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState<PasswordStrengthResult | null>(null);
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [code, setCode] = useState('');
   const [verificationCode, setVerificationCode] = useState(
     Math.floor(100000 + Math.random() * 900000).toString()
   );
+
+  const handlePasswordChange = (password: string) => {
+    setNewPassword(password);
+    if (password.length > 0) {
+      const strength = checkPasswordStrength(password);
+      setPasswordStrength(strength);
+    } else {
+      setPasswordStrength(null);
+    }
+  };
+
+  const renderPasswordStrengthMeter = () => {
+    if (!passwordStrength) return null;
+    
+    // The score is already 0-100 from checkPasswordStrength
+    const strengthPercentage = Math.min(100, Math.max(0, passwordStrength.score));
+    
+    // Determine strength level and color
+    let strengthLabel = 'Very Weak';
+    let strengthColor = '#FF3B30';
+    
+    if (strengthPercentage < 20) {
+      strengthLabel = 'Very Weak';
+      strengthColor = '#FF3B30';
+    } else if (strengthPercentage < 40) {
+      strengthLabel = 'Weak';
+      strengthColor = '#FF9500';
+    } else if (strengthPercentage < 60) {
+      strengthLabel = 'Fair';
+      strengthColor = '#FFCC00';
+    } else if (strengthPercentage < 80) {
+      strengthLabel = 'Strong';
+      strengthColor = '#34C759';
+    } else {
+      strengthLabel = 'Very Strong';
+      strengthColor = '#1a8cff';
+    }
+    
+    const mainSuggestion = passwordStrength.suggestions?.[0] || '';
+
+    return (
+      <View style={styles.passwordFeedback}>
+        <View style={styles.strengthMeter}>
+          <View 
+            style={[
+              styles.strengthMeterFill, 
+              { 
+                width: `${strengthPercentage}%`,
+                backgroundColor: strengthColor
+              }
+            ]} 
+          />
+        </View>
+        <Text style={[styles.strengthText, { color: strengthColor }]}>
+          {strengthLabel}
+        </Text>
+        {mainSuggestion ? (
+          <Text style={styles.suggestionText}>
+            {mainSuggestion}
+          </Text>
+        ) : null}
+      </View>
+    );
+  };
 
   const handleSendCode = async () => {
     if (!email) {
@@ -171,18 +238,41 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
                     keyboardType="number-pad"
                   />
                 </View>
-                <View style={[styles.inputContainer, { marginTop: 15 }]}>
-                  <Ionicons name="lock-closed-outline" size={20} color="#FF0000" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="New Password"
-                    placeholderTextColor="#666"
-                    value={newPassword}
-                    onChangeText={setNewPassword}
-                    secureTextEntry
-                  />
+                <View style={{ marginBottom: 12 }}>
+                  <View style={styles.inputGroup}>
+                    <Ionicons name="lock-closed-outline" size={20} color="#FF0000" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="New Password"
+                      placeholderTextColor="#666"
+                      value={newPassword}
+                      onChangeText={handlePasswordChange}
+                      secureTextEntry={!showNewPassword}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      textContentType="newPassword"
+                      autoComplete="new-password"
+                      importantForAutofill="no"
+                    />
+                    <TouchableOpacity
+                      style={styles.eyeIcon}
+                      onPress={() => setShowNewPassword(!showNewPassword)}
+                    >
+                      <Ionicons 
+                        name={showNewPassword ? 'eye-off' : 'eye'} 
+                        size={20} 
+                        color="#666" 
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  {newPassword ? (
+                    <View style={styles.passwordFeedback}>
+                      {renderPasswordStrengthMeter()}
+                    </View>
+                  ) : null}
                 </View>
-                <View style={styles.inputContainer}>
+
+                <View style={styles.inputGroup}>
                   <Ionicons name="lock-closed-outline" size={20} color="#FF0000" style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
@@ -190,8 +280,22 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
                     placeholderTextColor="#666"
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
-                    secureTextEntry
+                    secureTextEntry={!showConfirmPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    textContentType="newPassword"
+                    importantForAutofill="no"
                   />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    <Ionicons 
+                      name={showConfirmPassword ? 'eye-off' : 'eye'} 
+                      size={20} 
+                      color="#666" 
+                    />
+                  </TouchableOpacity>
                 </View>
                 <TouchableOpacity
                   style={[styles.button, isLoading && styles.buttonDisabled]}
@@ -222,6 +326,44 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ navigation 
 };
 
 const styles = StyleSheet.create({
+  passwordFeedback: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  strengthMeter: {
+    height: 4,
+    backgroundColor: '#333333',
+    borderRadius: 2,
+    marginBottom: 4,
+    overflow: 'hidden',
+  },
+  strengthMeterFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  strengthText: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  suggestionText: {
+    fontSize: 12,
+    color: '#FF9500',
+    fontStyle: 'italic',
+  },
+  inputGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#333333',
+  },
+  eyeIcon: {
+    padding: 10,
+    position: 'absolute',
+    right: 0,
+  },
   container: {
     flex: 1,
   },

@@ -1,13 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 import moment from 'moment';
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { Modal, Portal, Button, Provider } from 'react-native-paper';
-import { TextInput } from 'react-native';
-import * as SQLite from 'expo-sqlite';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { executeQuery } from '../utils/database';
 
@@ -32,13 +28,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [medicationsRemaining, setMedicationsRemaining] = useState(0);
   const [adherencePercentage, setAdherencePercentage] = useState(0);
   const [upcomingMedications, setUpcomingMedications] = useState<Medication[]>([]);
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [name, setName] = useState('');
-  const [dosage, setDosage] = useState('');
-  const [frequency, setFrequency] = useState('');
-  const [time, setTime] = useState('');
-  const [selectedTime, setSelectedTime] = useState(new Date());
+
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
@@ -106,66 +96,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
 
 
-  const handleAddMedication = async () => {
-    try {
-      if (!currentUser?.id) {
-        Alert.alert('Error', 'You must be logged in to add medications');
-        return;
-      }
 
-      if (!name || !dosage || !frequency || !time) {
-        Alert.alert('Error', 'Please fill in all fields');
-        return;
-      }
-
-      const newMedication: Medication = {
-        id: Date.now().toString(),
-        name,
-        dosage,
-        frequency,
-        time: selectedTime.toISOString(),
-      };
-
-      // Insert the new medication into the SQLite database
-      await executeQuery(
-        `INSERT INTO medications (id, user_id, name, dosage, frequency, time) VALUES (?, ?, ?, ?, ?, ?);`,
-        [
-          newMedication.id, 
-          currentUser.id,
-          newMedication.name, 
-          newMedication.dosage, 
-          newMedication.frequency, 
-          newMedication.time
-        ]
-      );
-
-      const updatedMedications = [...upcomingMedications, newMedication];
-      setUpcomingMedications(updatedMedications);
-
-      // Reset form and close modal
-      setName('');
-      setDosage('');
-      setFrequency('');
-      setTime('');
-      setSelectedTime(new Date());
-      setIsModalVisible(false);
-
-      Alert.alert('Success', 'Medication added successfully');
-    } catch (error) {
-      console.error('Error adding medication to SQLite:', error);
-      Alert.alert('Error', 'Failed to add medication');
-    }
-  };
-
-  const handleTimeChange = (event: any, selectedTime: Date | undefined) => {
-    setShowTimePicker(false);
-    if (selectedTime) {
-      setSelectedTime(selectedTime);
-      const formattedTime = moment(selectedTime).format('hh:mm A');
-      setTime(formattedTime);
-      console.log('Selected time:', formattedTime);
-    }
-  };
 
   const renderItem = ({ item }: { item: any }) => {
     if (item.key === 'header') {
@@ -279,134 +210,31 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     );
   };
 
-  const renderAddMedicationModal = () => (
-    <Portal>
-      <Modal
-        visible={isModalVisible}
-        onDismiss={() => {
-          setIsModalVisible(false);
-          setName('');
-          setDosage('');
-          setFrequency('');
-          setTime('');
-          setSelectedTime(new Date());
-        }}
-        contentContainerStyle={styles.modalContent}
-      >
-        <ScrollView style={styles.modalScrollView}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add New Medication</Text>
-            <TouchableOpacity 
-              onPress={() => {
-                setIsModalVisible(false);
-                setName('');
-                setDosage('');
-                setFrequency('');
-                setTime('');
-                setSelectedTime(new Date());
-              }}
-              style={styles.closeButton}
-            >
-              <Ionicons name="close" size={24} color="#000" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              value={name}
-              onChangeText={setName}
-              placeholder="Medication Name"
-              placeholderTextColor="#666"
-              autoCapitalize="words"
-              returnKeyType="next"
-            />
 
-            <TextInput
-              style={styles.input}
-              value={dosage}
-              onChangeText={setDosage}
-              placeholder="Dosage (e.g., 500mg)"
-              placeholderTextColor="#666"
-              autoCapitalize="none"
-              returnKeyType="next"
-            />
-
-            <TextInput
-              style={styles.input}
-              value={frequency}
-              onChangeText={setFrequency}
-              placeholder="Frequency (e.g., Once daily)"
-              placeholderTextColor="#666"
-              autoCapitalize="words"
-              returnKeyType="done"
-            />
-
-            <Button
-              mode="contained"
-              onPress={() => setShowTimePicker(true)}
-              style={styles.datePickerButton}
-            >
-              {time || 'Select Time'}
-            </Button>
-
-            {showTimePicker && (
-              <DateTimePicker
-                mode="time"
-                value={selectedTime}
-                display="default"
-                onChange={handleTimeChange}
-                is24Hour={false}
-              />
-            )}
-
-            <Button
-              mode="contained"
-              onPress={handleAddMedication}
-              disabled={!name || !dosage || !frequency || !time}
-              style={styles.addButton}
-            >
-              Add Medication
-            </Button>
-          </View>
-        </ScrollView>
-      </Modal>
-    </Portal>
-  );
 
 
 
   return (
-    <Provider>
-      <View style={styles.gradient}>
-        <View style={styles.container}>
-          <View style={styles.headerContainer}>
-            <Text style={styles.greeting}>Hello, {userName}!</Text>
-            <Text style={styles.subHeader}>Today is {moment().format('dddd, MMMM D, YYYY')}</Text>
-
-          </View>
-          <FlatList
-            data={[{ key: 'header' }]}
-            renderItem={renderItem}
-            keyExtractor={(item) => item.key}
-            contentContainerStyle={styles.contentContainer}
-            ListHeaderComponent={
-              <>
-                {renderDailyOverview()}
-                {renderUpcomingMedications()}
-              </>
-            }
-          />
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={() => setIsModalVisible(true)}
-          >
-            <Ionicons name="add" size={24} color="white" />
-          </TouchableOpacity>
-          {renderAddMedicationModal()}
+    <View style={styles.gradient}>
+      <View style={styles.container}>
+        <View style={styles.headerContainer}>
+          <Text style={styles.greeting}>Hello, {userName}!</Text>
+          <Text style={styles.subHeader}>Today is {moment().format('dddd, MMMM D, YYYY')}</Text>
         </View>
+        <FlatList
+          data={[{ key: 'header' }]}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.key}
+          contentContainerStyle={styles.contentContainer}
+          ListHeaderComponent={
+            <>
+              {renderDailyOverview()}
+              {renderUpcomingMedications()}
+            </>
+          }
+        />
       </View>
-    </Provider>
+    </View>
   );
 };
 
@@ -496,12 +324,12 @@ const styles = StyleSheet.create({
   progressBar: {
     height: '100%',
     borderRadius: 4,
+    backgroundColor: '#C5A14E', // Dark gold progress bar
   },
   progressFooter: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
   },
-
   container: {
     flex: 1,
     padding: 16,
@@ -548,17 +376,6 @@ const styles = StyleSheet.create({
   cardContentText: {
     fontSize: 16,
     color: '#FFFFFF', // White for minor text
-  },
-  progressBarContainer: {
-    height: 10,
-    backgroundColor: '#333333',
-    borderRadius: 5,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressBar: {
-    height: '100%',
-    backgroundColor: '#C5A14E', // Dark gold progress bar
   },
   cardFooterText: {
     fontSize: 14,

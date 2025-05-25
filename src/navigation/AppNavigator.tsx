@@ -16,6 +16,7 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 import PersonalInformationScreen from '../screens/PersonalInformationScreen';
 import EmergencyContactsScreen from '../screens/EmergencyContactsScreen';
 import SplashScreen from '../screens/SplashScreen';
+import TermsAndConditionsScreen from '../screens/TermsAndConditionsScreen';
 import { RootStackParamList } from '../types/navigation';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -70,6 +71,21 @@ const AppNavigator = () => {
         />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
+        <Stack.Screen 
+          name="TermsAndConditions" 
+          component={TermsAndConditionsScreen}
+          options={{
+            headerShown: true,
+            title: 'Terms & Conditions',
+            headerStyle: {
+              backgroundColor: '#000',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+          }}
+        />
         <Stack.Screen 
           name="ForgotPassword" 
           component={ForgotPasswordScreen}

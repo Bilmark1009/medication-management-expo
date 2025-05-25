@@ -4,6 +4,7 @@ export type RootStackParamList = {
   Landing: undefined;
   Login: undefined;
   Register: undefined;
+  TermsAndConditions: undefined;
   ForgotPassword: undefined;
   VerifyHash: { 
     email: string; 
@@ -14,7 +15,6 @@ export type RootStackParamList = {
   Home: undefined;
   Profile: undefined;
   AddMedication: { onAddMedication?: (medication: Medication) => void };
-  AddMedicationModal: undefined;
   MedicationList: undefined;
   MedicationDetails: { medicationId: string };
   Medication: undefined;

@@ -7,7 +7,6 @@ import { Ionicons } from '@expo/vector-icons';
 // Import all screens
 import HomeScreen from '../screens/HomeScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import AddMedicationModal from '../screens/AddMedicationModal';
 import MedicationScreen from '../screens/MedicationScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import PersonalInformationScreen from '../screens/PersonalInformationScreen';
@@ -33,25 +32,7 @@ function ProfileStackNavigator() {
   );
 }
 
-// Add Stack Navigator
-function AddStackNavigator() {
-  return (
-    <AddStack.Navigator
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
-      <AddStack.Screen 
-        name="AddMedicationModal" 
-        component={AddMedicationModal}
-        options={{
-          presentation: 'modal',
-          title: 'Add Medication'
-        }}
-      />
-    </AddStack.Navigator>
-  );
-}
+// Add Stack Navigator (no AddMedicationModal, cleaned up)
 
 export default function TabNavigator() {
   return (
