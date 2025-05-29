@@ -15,16 +15,14 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 
 interface PersonalInfo {
-  name: string;
-  age: string;
-  email: string;
-  phoneNumber: string;
+  fullName: string;
+  dateOfBirth: string;
   bloodType: string;
   allergies: string;
-  medicalConditions: string;
-  dob: string; // Added DOB field
-  address: string; // Added address field
-  gender: string; // Added gender field
+  currentMedications: string;
+  primaryPhysician: string;
+  emergencyContact: string;
+  emergencyPhone: string;
 }
 
 type PersonalInformationScreenProps = {
@@ -36,16 +34,14 @@ const PersonalInformationScreen: React.FC<PersonalInformationScreenProps> = ({ n
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [personalInfo, setPersonalInfo] = useState<PersonalInfo>({
-    name: '',
-    age: '',
-    email: '',
-    phoneNumber: '',
+    fullName: '',
+    dateOfBirth: '',
     bloodType: '',
-    allergies: '',
-    medicalConditions: '',
-    dob: '', // Added DOB field
-    address: '', // Added address field
-    gender: '', // Added gender field
+    allergies: 'None',
+    currentMedications: 'None',
+    primaryPhysician: '',
+    emergencyContact: '',
+    emergencyPhone: ''
   });
 
   useEffect(() => {
@@ -66,8 +62,8 @@ const PersonalInformationScreen: React.FC<PersonalInformationScreenProps> = ({ n
   };
 
   const handleSave = async () => {
-    if (!personalInfo.name || !personalInfo.email) {
-      Alert.alert('Error', 'Name and email are required');
+    if (!personalInfo.fullName) {
+      Alert.alert('Error', 'Full name is required');
       return;
     }
 
@@ -121,13 +117,13 @@ const PersonalInformationScreen: React.FC<PersonalInformationScreenProps> = ({ n
             {isEditing ? (
               <TextInput
                 style={[styles.input, !isEditing && styles.inputDisabled]}
-                value={personalInfo.name}
-                onChangeText={(text) => setPersonalInfo({ ...personalInfo, name: text })}
+                value={personalInfo.fullName}
+                onChangeText={(text) => setPersonalInfo({ ...personalInfo, fullName: text })}
                 editable={isEditing}
                 placeholder="Enter your full name"
               />
             ) : (
-              <Text style={styles.valueText}>{personalInfo.name || 'Not provided'}</Text>
+              <Text style={styles.valueText}>{personalInfo.fullName || 'Not provided'}</Text>
             )}
           </View>
 
@@ -136,93 +132,14 @@ const PersonalInformationScreen: React.FC<PersonalInformationScreenProps> = ({ n
             {isEditing ? (
               <TextInput
                 style={[styles.input, !isEditing && styles.inputDisabled]}
-                value={personalInfo.dob}
-                onChangeText={(text) => setPersonalInfo({ ...personalInfo, dob: text })}
+                value={personalInfo.dateOfBirth}
+                onChangeText={(text) => setPersonalInfo({ ...personalInfo, dateOfBirth: text })}
                 editable={isEditing}
-                placeholder="Enter your date of birth (YYYY-MM-DD)"
+                placeholder="YYYY-MM-DD"
+                keyboardType="numbers-and-punctuation"
               />
             ) : (
-              <Text style={styles.valueText}>{personalInfo.dob || 'Not provided'}</Text>
-            )}
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Gender</Text>
-            {isEditing ? (
-              <TextInput
-                style={[styles.input, !isEditing && styles.inputDisabled]}
-                value={personalInfo.gender}
-                onChangeText={(text) => setPersonalInfo({ ...personalInfo, gender: text })}
-                editable={isEditing}
-                placeholder="Enter your gender"
-              />
-            ) : (
-              <Text style={styles.valueText}>{personalInfo.gender || 'Not provided'}</Text>
-            )}
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Address</Text>
-            {isEditing ? (
-              <TextInput
-                style={[styles.input, styles.textArea, !isEditing && styles.inputDisabled]}
-                value={personalInfo.address}
-                onChangeText={(text) => setPersonalInfo({ ...personalInfo, address: text })}
-                editable={isEditing}
-                multiline
-                numberOfLines={4}
-                placeholder="Enter your address"
-              />
-            ) : (
-              <Text style={styles.valueText}>{personalInfo.address || 'Not provided'}</Text>
-            )}
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Age</Text>
-            {isEditing ? (
-              <TextInput
-                style={[styles.input, !isEditing && styles.inputDisabled]}
-                value={personalInfo.age}
-                onChangeText={(text) => setPersonalInfo({ ...personalInfo, age: text })}
-                editable={isEditing}
-                keyboardType="numeric"
-                placeholder="Enter your age"
-              />
-            ) : (
-              <Text style={styles.valueText}>{personalInfo.age || 'Not provided'}</Text>
-            )}
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
-            {isEditing ? (
-              <TextInput
-                style={[styles.input, !isEditing && styles.inputDisabled]}
-                value={personalInfo.email}
-                onChangeText={(text) => setPersonalInfo({ ...personalInfo, email: text })}
-                editable={isEditing}
-                keyboardType="email-address"
-                placeholder="Enter your email"
-              />
-            ) : (
-              <Text style={styles.valueText}>{personalInfo.email || 'Not provided'}</Text>
-            )}
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Phone Number</Text>
-            {isEditing ? (
-              <TextInput
-                style={[styles.input, !isEditing && styles.inputDisabled]}
-                value={personalInfo.phoneNumber}
-                onChangeText={(text) => setPersonalInfo({ ...personalInfo, phoneNumber: text })}
-                editable={isEditing}
-                keyboardType="phone-pad"
-                placeholder="Enter your phone number"
-              />
-            ) : (
-              <Text style={styles.valueText}>{personalInfo.phoneNumber || 'Not provided'}</Text>
+              <Text style={styles.valueText}>{personalInfo.dateOfBirth || 'Not provided'}</Text>
             )}
           </View>
 

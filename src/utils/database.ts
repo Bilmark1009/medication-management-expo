@@ -28,18 +28,44 @@ export const initializeDatabase = async () => {
       );
     `);
 
-    await db.execAsync(`
-      DROP TABLE IF EXISTS medications;
-    `);
+    // Migration: Add duration column if it does not exist
+    const columns = await db.getAllAsync(`PRAGMA table_info(medications);`);
+    const hasDuration = columns.some((col: any) => col.name === 'duration');
+    if (!hasDuration) {
+      try {
+        await db.execAsync(`ALTER TABLE medications ADD COLUMN duration TEXT;`);
+        console.log('Migrated: Added duration column to medications table');
+      } catch (e) {
+        // Ignore error if column already exists
+        console.log('Duration column migration error:', e);
+      }
+    }
+    // Migration: Add form column if it does not exist
+    const hasForm = columns.some((col: any) => col.name === 'form');
+    if (!hasForm) {
+      try {
+        await db.execAsync(`ALTER TABLE medications ADD COLUMN form TEXT;`);
+        console.log('Migrated: Added form column to medications table');
+      } catch (e) {
+        // Ignore error if column already exists
+        console.log('Form column migration error:', e);
+      }
+    }
+
+    // await db.execAsync(`
+    //   DROP TABLE IF EXISTS medications;
+    // `);
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS medications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         name TEXT NOT NULL,
+        form TEXT,
         dosage TEXT NOT NULL,
         frequency TEXT NOT NULL,
         time TEXT NOT NULL,
         instructions TEXT,
+        duration TEXT,
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
       );
     `);

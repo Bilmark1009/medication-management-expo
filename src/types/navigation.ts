@@ -21,7 +21,6 @@ export type RootStackParamList = {
   History: undefined;
   PersonalInformation: undefined;
   EmergencyContacts: undefined;
-  Notifications: undefined;
   PrivacySecurity: undefined;
   HelpSupport: undefined;
   EditMedication: { medicationId: string };
@@ -30,6 +29,7 @@ export type RootStackParamList = {
 export type Medication = {
   id: string;
   name: string;
+  form?: string;
   dosage: string;
   frequency: string;
   instructions?: string;

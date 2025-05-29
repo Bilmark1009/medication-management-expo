@@ -17,6 +17,7 @@ import PersonalInformationScreen from '../screens/PersonalInformationScreen';
 import EmergencyContactsScreen from '../screens/EmergencyContactsScreen';
 import SplashScreen from '../screens/SplashScreen';
 import TermsAndConditionsScreen from '../screens/TermsAndConditionsScreen';
+import PrivacySecurityScreen from '../screens/PrivacySecurityScreen';
 import { RootStackParamList } from '../types/navigation';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -128,10 +129,17 @@ const AppNavigator = () => {
         />
         <Stack.Screen 
           name="PrivacySecurity" 
-          component={EmergencyContactsScreen}
+          component={PrivacySecurityScreen}
           options={{
             headerShown: true,
             title: 'Privacy & Security',
+            headerStyle: {
+              backgroundColor: '#000',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
           }}
         />
         <Stack.Screen 

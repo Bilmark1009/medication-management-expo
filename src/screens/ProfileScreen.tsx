@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Linking,
+  Modal,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
@@ -47,13 +48,6 @@ interface UserProfile {
   role: string;
 }
 
-interface NotificationSettings {
-  sound: boolean;
-  vibration: boolean;
-  reminders: boolean;
-  dosageAlerts: boolean;
-}
-
 const defaultProfile: UserProfile = {
   name: '',
   age: '',
@@ -72,20 +66,14 @@ const defaultProfile: UserProfile = {
   role: '',
 };
 
-const defaultNotificationSettings: NotificationSettings = {
-  sound: true,
-  vibration: true,
-  reminders: true,
-  dosageAlerts: true,
-};
-
 const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const [profile, setProfile] = useState<UserProfile>(defaultProfile);
-  const [notifications, setNotifications] = useState<NotificationSettings>(defaultNotificationSettings);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isPickingImage, setIsPickingImage] = useState(false);
+  const [profileOptionsVisible, setProfileOptionsVisible] = useState(false);
+  const [viewProfileVisible, setViewProfileVisible] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -94,7 +82,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const loadUserData = async () => {
     try {
       const userData = await AsyncStorage.getItem('currentUser');
-      const settingsData = await AsyncStorage.getItem('notificationSettings');
       
       if (userData) {
         const parsedUserData = JSON.parse(userData);
@@ -106,14 +93,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             ...defaultProfile.emergencyContact,
             ...(parsedUserData.emergencyContact || {}),
           },
-        }));
-      }
-      
-      if (settingsData) {
-        const parsedSettings = JSON.parse(settingsData);
-        setNotifications(prevSettings => ({
-          ...defaultNotificationSettings,
-          ...parsedSettings,
         }));
       }
     } catch (error) {
@@ -188,7 +167,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     try {
       // Save the profile data
       await AsyncStorage.setItem('currentUser', JSON.stringify(profile));
-      await AsyncStorage.setItem('notificationSettings', JSON.stringify(notifications));
       
       // Show success message
       Alert.alert('Success', 'Profile updated successfully');
@@ -277,7 +255,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     >
       <View style={styles.headerContainer}>
         <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity style={styles.profileImageContainer} onPress={pickImage}>
+        <TouchableOpacity style={styles.profileImageContainer} onPress={() => setProfileOptionsVisible(true)}>
           {isPickingImage ? (
             <ActivityIndicator size="large" color="#FFFFFF" />
           ) : profile.profilePicture ? (
@@ -288,6 +266,51 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             </View>
           )}
         </TouchableOpacity>
+
+        {/* Profile Options Modal */}
+        <Modal
+          visible={profileOptionsVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setProfileOptionsVisible(false)}
+        >
+          <TouchableOpacity style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)'}} activeOpacity={1} onPress={() => setProfileOptionsVisible(false)}>
+            <View style={{position:'absolute',top:'40%',left:'10%',right:'10%',backgroundColor:'#232323',borderRadius:18,padding:24,alignItems:'center',elevation:6}}>
+              <Text style={{color:'#fff',fontSize:18,fontWeight:'bold',marginBottom:18}}>Profile Options</Text>
+              <TouchableOpacity style={{paddingVertical:12,width:'100%',alignItems:'center'}} onPress={() => { setProfileOptionsVisible(false); setViewProfileVisible(true); }}>
+                <Text style={{color:'#F44336',fontSize:16}}>View Profile</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{paddingVertical:12,width:'100%',alignItems:'center'}} onPress={() => { setProfileOptionsVisible(false); pickImage(); }}>
+                <Text style={{color:'#F44336',fontSize:16}}>Change Profile</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{paddingVertical:12,width:'100%',alignItems:'center'}} onPress={() => setProfileOptionsVisible(false)}>
+                <Text style={{color:'#fff',fontSize:16}}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* View Profile Picture Modal */}
+        <Modal
+          visible={viewProfileVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setViewProfileVisible(false)}
+        >
+          <TouchableOpacity style={{flex:1,backgroundColor:'rgba(0,0,0,0.95)',justifyContent:'center',alignItems:'center'}} activeOpacity={1} onPress={() => setViewProfileVisible(false)}>
+            {profile.profilePicture ? (
+              <Image source={{ uri: profile.profilePicture }} style={{width:280,height:280,borderRadius:140,borderWidth:4,borderColor:'#fff',marginBottom:24}} resizeMode="cover" />
+            ) : (
+              <View style={{width:280,height:280,borderRadius:140,backgroundColor:'#1A1A1A',justifyContent:'center',alignItems:'center',marginBottom:24}}>
+                <Ionicons name="person" size={120} color="#fff" />
+              </View>
+            )}
+            <Text style={{color:'#fff',fontSize:20,fontWeight:'bold',marginBottom:12}}>{profile.name || 'No Name'}</Text>
+            <TouchableOpacity style={{backgroundColor:'#F44336',paddingVertical:10,paddingHorizontal:32,borderRadius:8,marginTop:12}} onPress={() => setViewProfileVisible(false)}>
+              <Text style={{color:'#fff',fontSize:16}}>Close</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
         <Text style={styles.profileName}>{profile.name}</Text>
         <Text style={styles.profileRole}>{profile.role}</Text>
       </View>
@@ -305,12 +328,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           'call-outline',
           'Emergency Contacts',
           () => navigation.navigate('EmergencyContacts')
-        )}
-
-        {renderSettingsItem(
-          'notifications-outline',
-          'Notifications',
-          () => navigation.navigate('Notifications')
         )}
 
         {renderSettingsItem(
