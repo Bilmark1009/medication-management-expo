@@ -16,7 +16,17 @@ import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { executeQuery } from '../utils/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Medication } from '../types/navigation';
+import { Medication as BaseMedication } from '../types/navigation';
+
+// Extend the base Medication type with our additional fields
+type Medication = BaseMedication & {
+  time: string;
+  timeObj: Date;
+  notification_id?: string;
+  duration?: string;
+  times?: Date[]; // Add times property for the medication form
+};
+import { schedulePushNotification, cancelScheduledNotification } from '../services/notifications';
 
 const styles = StyleSheet.create({
   gradient: {
@@ -68,7 +78,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   listContainer: {
-    paddingBottom: 24,
+    paddingBottom: 100, // Extra padding to account for the floating button
+    paddingTop: 8,
+  },
+  listContent: {
+    flexGrow: 1,
   },
   medicationCard: {
     backgroundColor: '#1E1E1E',
@@ -267,13 +281,13 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
               <Text style={{color:'#fff',fontSize:24,fontWeight:'bold',marginBottom:16}}>Step 2: Select Medication Form</Text>
               <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16,justifyContent:'center'}}>
                 {MEDICATION_FORMS.map(f => (
-                  <TouchableOpacity key={f.key} onPress={()=>setMedForm(f.key)} style={{backgroundColor:medForm===f.key?'#4CAF50':'#232323',borderRadius:8,padding:12,margin:4,alignItems:'center',width:90}}>
+                  <TouchableOpacity key={f.key} onPress={()=>setMedForm(f.key)} style={{backgroundColor:medForm===f.key?'#F44336':'#232323',borderRadius:8,padding:12,margin:4,alignItems:'center',width:90}}>
                     <Ionicons name={f.icon as any} size={28} color={medForm===f.key?'#fff':'#aaa'} />
                     <Text style={{color:medForm===f.key?'#fff':'#aaa',marginTop:4,fontSize:13}}>{f.key}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-              <TouchableOpacity style={{backgroundColor:'#4CAF50',padding:14,borderRadius:8,alignItems:'center'}} disabled={!medForm} onPress={()=>setStep(3)}>
+              <TouchableOpacity style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center'}} disabled={!medForm} onPress={()=>setStep(3)}>
                 <Text style={{color:'#fff',fontWeight:'bold',fontSize:18}}>Next</Text>
               </TouchableOpacity>
             </View>
@@ -293,7 +307,7 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
                   />
                 </View>
               </View>
-              <TouchableOpacity style={{backgroundColor:'#4CAF50',padding:14,borderRadius:8,alignItems:'center'}} disabled={!dosage.trim()} onPress={()=>setStep(4)}>
+              <TouchableOpacity style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center'}} disabled={!dosage.trim()} onPress={()=>setStep(4)}>
                 <Text style={{color:'#fff',fontWeight:'bold',fontSize:18}}>Next</Text>
               </TouchableOpacity>
             </View>
@@ -303,12 +317,12 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
               <Text style={{color:'#fff',fontSize:24,fontWeight:'bold',marginBottom:16}}>Step 4: Choose Frequency</Text>
               <View style={{marginBottom:16}}>
                 {FREQUENCIES.map(f => (
-                  <TouchableOpacity key={f.key} onPress={()=>setFrequency(f)} style={{backgroundColor:frequency?.key===f.key?'#4CAF50':'#232323',borderRadius:8,padding:14,marginVertical:4}}>
+                  <TouchableOpacity key={f.key} onPress={()=>setFrequency(f)} style={{backgroundColor:frequency?.key===f.key?'#F44336':'#232323',borderRadius:8,padding:14,marginVertical:4}}>
                     <Text style={{color:frequency?.key===f.key?'#fff':'#aaa',fontSize:16}}>{f.key}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-              <TouchableOpacity style={{backgroundColor:'#4CAF50',padding:14,borderRadius:8,alignItems:'center'}} disabled={!frequency} onPress={()=>setStep(5)}>
+              <TouchableOpacity style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center'}} disabled={!frequency} onPress={()=>setStep(5)}>
                 <Text style={{color:'#fff',fontWeight:'bold',fontSize:18}}>Next</Text>
               </TouchableOpacity>
             </View>
@@ -318,7 +332,13 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
               <Text style={{color:'#fff',fontSize:24,fontWeight:'bold',marginBottom:16}}>Step 5: Set Schedule</Text>
               <Text style={{color:'#aaa',marginBottom:12}}>Set intake times</Text>
               {/* Ensure times is initialized with correct number of Date objects for the frequency */}
-              {times.length !== (frequency?.times || 1) && setTimes(Array.from({length: frequency?.times || 1}, (_,i) => times[i] || new Date()))}
+              {(() => {
+                if (times.length !== (frequency?.times || 1)) {
+                  setTimes(Array.from({length: frequency?.times || 1}, (_,i) => times[i] || new Date()));
+                  return null;
+                }
+                return null;
+              })()}
               {times.map((t, idx) => (
                 <TouchableOpacity key={idx} onPress={() => {
                   // Defensive: ensure times[idx] is a Date
@@ -389,8 +409,10 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
             <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)',justifyContent:'center',alignItems:'center'}}>
               <View style={{backgroundColor:'#222',borderRadius:12,padding:20,width:280,alignItems:'center'}}>
                 <Text style={{color:'#fff',fontSize:18,marginBottom:16}}>Select Time</Text>
-                <View style={{flexDirection:'row',justifyContent:'center',alignItems:'center'}}>
-                  <Picker
+                <View style={{flexDirection:'row',justifyContent:'center',alignItems:'flex-end'}}>
+                    <View style={{alignItems:'center'}}>
+                      <Text style={{color:'#fff',fontSize:14,marginBottom:4}}>Hour</Text>
+                      <Picker
                     selectedValue={times[showTimePicker.idx] ? times[showTimePicker.idx].getHours() : 8}
                     style={{width:100,color:'#fff'}} itemStyle={{color:'#fff'}} dropdownIconColor="#fff"
                     onValueChange={(hour: number) => {
@@ -403,11 +425,14 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
                     }}
                   >
                     {[...Array(24).keys()].map(h => (
-                      <Picker.Item key={h} label={h.toString().padStart(2,'0')} value={h} color="#fff" />
+                      <Picker.Item key={h} label={h.toString().padStart(2,'0')} value={h} color="#000" />
                     ))}
                   </Picker>
-                  <Text style={{color:'#fff',fontSize:18,marginHorizontal:8}}>:</Text>
-                  <Picker
+                    </View>
+                    <Text style={{color:'#fff',fontSize:18,marginHorizontal:8,alignSelf:'flex-end'}}>:</Text>
+                    <View style={{alignItems:'center'}}>
+                      <Text style={{color:'#fff',fontSize:14,marginBottom:4}}>Minute</Text>
+                      <Picker
                     selectedValue={times[showTimePicker.idx] ? times[showTimePicker.idx].getMinutes() : 0}
                     style={{width:100,color:'#fff'}} itemStyle={{color:'#fff'}} dropdownIconColor="#fff"
                     onValueChange={(minute: number) => {
@@ -420,9 +445,10 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
                     }}
                   >
                     {[...Array(60).keys()].map(m => (
-                      <Picker.Item key={m} label={m.toString().padStart(2,'0')} value={m} color="#fff" />
+                      <Picker.Item key={m} label={m.toString().padStart(2,'0')} value={m} color="#000" />
                     ))}
                   </Picker>
+                    </View>
                 </View>
                 <TouchableOpacity style={{marginTop:20,backgroundColor:'#4CAF50',padding:12,borderRadius:8,width:120,alignItems:'center'}} onPress={()=>setShowTimePicker({show:false,idx:0})}>
                   <Text style={{color:'#fff',fontWeight:'bold',fontSize:16}}>Done</Text>
@@ -455,25 +481,18 @@ const MedicationScreen: React.FC = () => {
     try {
       const currentUser = JSON.parse(await AsyncStorage.getItem('currentUser') || '{}');
       if (!currentUser?.id) throw new Error('User not logged in');
-      // Fetch all columns, including duration if it exists
+      
       const result = await executeQuery(
         'SELECT * FROM medications WHERE user_id = ? ORDER BY time ASC;',
         [currentUser.id]
-      );
-      // If duration is not in DB, fallback to undefined
-      // Group medications by name, dosage, frequency, duration
-      const grouped: Record<string, any> = {};
-      (result || []).forEach((m: any) => {
-        const key = `${m.name}|${m.form}|${m.dosage}|${m.frequency}|${m.duration}`;
-        if (!grouped[key]) {
-          grouped[key] = {
-            ...m,
-            times: [],
-          };
-        }
-        grouped[key].times.push(m.time);
-      });
-      const meds = Object.values(grouped);
+      ) as Array<BaseMedication & { time: string }>;
+      
+      const meds: Medication[] = (result || []).map(med => ({
+        ...med,
+        time: med.time,
+        timeObj: new Date(med.time)
+      }));
+      
       setMedications(meds);
     } catch (error) {
       console.error('Error loading medications:', error);
@@ -483,7 +502,9 @@ const MedicationScreen: React.FC = () => {
     }
   };
 
-  const handleDeleteMedication = async (med: Medication & { duration?: string, times?: string[] }) => {
+  const [detailModal, setDetailModal] = useState<{visible: boolean, medication: Medication | null}>({visible: false, medication: null});
+
+  const handleDeleteMedication = async (med: Medication) => {
     try {
       const currentUser = JSON.parse(await AsyncStorage.getItem('currentUser') || '{}');
       // Use time as unique identifier for deletion
@@ -491,6 +512,12 @@ const MedicationScreen: React.FC = () => {
         Alert.alert('Error', 'Medication time not found. Cannot delete this medication.');
         return;
       }
+      
+      // Cancel the notification if it exists
+      if (med.notification_id) {
+        await cancelScheduledNotification(med.notification_id);
+      }
+      
       await executeQuery(
         'DELETE FROM medications WHERE user_id = ? AND name = ? AND time = ?;',
         [currentUser.id, med.name, med.time]
@@ -502,53 +529,43 @@ const MedicationScreen: React.FC = () => {
     }
   };
 
-  const handleAddMedication = async (med: any) => {
+  const handleAddMedication = async (med: { 
+    name: string; 
+    form?: string; 
+    dosage: string; 
+    frequency: string; 
+    times: Date[]; 
+    instructions?: string; 
+    duration?: string 
+  }) => {
     try {
       const currentUser = JSON.parse(await AsyncStorage.getItem('currentUser') || '{}');
       if (!currentUser?.id) throw new Error('User not logged in');
-      for (let t of med.times) {
-        await executeQuery(
+      
+      // Insert each time as a separate medication entry
+      for (const time of med.times) {
+        const result = await executeQuery(
           'INSERT INTO medications (user_id, name, form, dosage, frequency, time, instructions, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?);',
-          [currentUser.id, med.name, med.form, med.dosage, med.frequency, t.toISOString(), med.instructions || '', med.duration || '']
+          [currentUser.id, med.name, med.form, med.dosage, med.frequency, time.toISOString(), med.instructions || '', med.duration || '']
         );
+        
+        // Schedule notification for the new medication
+        if (result && result.insertId) {
+          const newMed = {
+            id: result.insertId.toString(),
+            ...med,
+            time: time.toISOString()
+          };
+          await schedulePushNotification(newMed);
+        }
       }
-      loadMedications();
+      
+      // Reload medications to show the new entries
+      await loadMedications();
     } catch (error) {
+      console.error('Error adding medication:', error);
       Alert.alert('Error', 'Failed to add medication');
     }
-  };
-
-  const [detailModal, setDetailModal] = useState<{visible: boolean, medication: (Medication & { duration?: string, times?: string[] }) | null}>({visible: false, medication: null});
-
-  const renderMedicationItem = ({ item }: { item: Medication & { duration?: string, times?: string[] } }) => {
-    // Helper to get 1st, 2nd, 3rd, etc.
-    const ordinal = (n: number) => {
-      const ords = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'];
-      return ords[n-1] || `${n}th`;
-    };
-    return (
-      <TouchableOpacity
-        style={styles.medicationCard}
-        activeOpacity={0.85}
-        onPress={() => setDetailModal({visible: true, medication: item})}
-      >
-        <View style={styles.medicationInfo}>
-          <Text style={styles.medicationName}>{item.name}</Text>
-          {item.form && (
-            <Text style={styles.medicationDetails}>{item.form}</Text>
-          )}
-          <Text style={styles.medicationDetails}>{item.frequency}</Text>
-        </View>
-        <View style={styles.medicationActions}>
-          <TouchableOpacity
-            onPress={() => handleDeleteMedication(item)}
-            style={styles.actionButton}
-          >
-            <Ionicons name="trash" size={20} color="#F44336" />
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    );
   };
 
   // Medication Detail Modal
@@ -563,29 +580,25 @@ const MedicationScreen: React.FC = () => {
       >
         <View style={{flex:1, backgroundColor:'rgba(0,0,0,0.7)', justifyContent:'center', alignItems:'center'}}>
           <View style={{backgroundColor:'#232323', borderRadius:16, padding:28, width:'85%', maxWidth:400, alignItems:'center'}}>
-            <Text style={{color:'#4CAF50', fontSize:22, fontWeight:'bold', marginBottom:18}}>Medication Details</Text>
-            {med && (
+            <Text style={{color:'#fff', fontSize:20, fontWeight:'bold', marginBottom:16}}>Medication Details</Text>
+            
+            {med ? (
               <>
                 <Text style={{color:'#fff', fontWeight:'bold', alignSelf:'flex-start'}}>Medicine Name:</Text>
                 <Text style={{color:'#ccc', marginBottom:10, alignSelf:'flex-start'}}>{med.name}</Text>
                 <Text style={{color:'#fff', fontWeight:'bold', alignSelf:'flex-start'}}>Form:</Text>
                 <Text style={{color:'#ccc', marginBottom:10, alignSelf:'flex-start'}}>{med.form || 'Not specified'}</Text>
+                <Text style={{color:'#fff', fontWeight:'bold', alignSelf:'flex-start'}}>Dosage:</Text>
+                <Text style={{color:'#ccc', marginBottom:10, alignSelf:'flex-start'}}>{med.dosage || 'Not specified'}</Text>
                 <Text style={{color:'#fff', fontWeight:'bold', alignSelf:'flex-start'}}>Frequency:</Text>
-                <Text style={{color:'#ccc', marginBottom:10, alignSelf:'flex-start'}}>{med.frequency}</Text>
-                <Text style={{color:'#fff', fontWeight:'bold', alignSelf:'flex-start'}}>Scheduled Intake:</Text>
-              {Array.isArray(med.times) && med.times.length > 0 ? (
-                med.times.map((t: string, i: number) => (
-                  <Text key={i} style={{color:'#ccc', marginBottom:4, alignSelf:'flex-start'}}>
-                    {`${['1st','2nd','3rd','4th','5th','6th','7th','8th','9th'][i] || `${i+1}th`} intake: ${formatTime(t)}`}
-                  </Text>
-                ))
-              ) : (
-                <Text style={{color:'#ccc', marginBottom:10, alignSelf:'flex-start'}}>{formatTime(med.time)}</Text>
-              )}
+                <Text style={{color:'#ccc', marginBottom:10, alignSelf:'flex-start'}}>{med.frequency || 'Not specified'}</Text>
+                <Text style={{color:'#fff', fontWeight:'bold', alignSelf:'flex-start'}}>Time:</Text>
+                <Text style={{color:'#ccc', marginBottom:10, alignSelf:'flex-start'}}>{med.time ? formatTime(med.time) : 'Not specified'}</Text>
                 <Text style={{color:'#fff', fontWeight:'bold', alignSelf:'flex-start'}}>Duration:</Text>
                 <Text style={{color:'#ccc', marginBottom:8, alignSelf:'flex-start'}}>{med.duration || 'Not specified'}</Text>
               </>
-            )}
+            ) : null}
+            
             <TouchableOpacity
               style={{marginTop:18, backgroundColor:'#4CAF50', borderRadius:8, paddingVertical:10, paddingHorizontal:36}}
               onPress={() => setDetailModal({visible: false, medication: null})}
@@ -602,15 +615,48 @@ const MedicationScreen: React.FC = () => {
 
   const formatTime = (timeString: string) => {
     try {
-      const time = new Date(timeString);
-      return time.toLocaleTimeString('en-US', {
+      const date = new Date(timeString);
+      return date.toLocaleTimeString('en-US', { 
         hour: '2-digit',
         minute: '2-digit',
-        hour12: true,
+        hour12: true 
       });
-    } catch (error) {
-      return timeString;
+    } catch (e) {
+      return timeString; // Return as is if parsing fails
     }
+  };
+
+  const renderMedicationItem = ({ item }: { item: Medication }) => {
+    return (
+      <TouchableOpacity
+        style={styles.medicationCard}
+        activeOpacity={0.85}
+        onPress={() => setDetailModal({visible: true, medication: item})}
+      >
+        <View style={styles.medicationInfo}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={styles.medicationName}>{item.name}</Text>
+            <Text style={[styles.medicationDetails, { color: '#4CAF50' }]}>
+              {formatTime(item.time)}
+            </Text>
+          </View>
+          {item.form && (
+            <Text style={styles.medicationDetails}>
+              {item.form} • {item.dosage}
+            </Text>
+          )}
+          <Text style={styles.medicationDetails}>{item.frequency}</Text>
+        </View>
+        <View style={styles.medicationActions}>
+          <TouchableOpacity
+            onPress={() => handleDeleteMedication(item)}
+            style={styles.actionButton}
+          >
+            <Ionicons name="trash" size={20} color="#F44336" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
   };
 
   if (isLoading) {
@@ -629,48 +675,72 @@ const MedicationScreen: React.FC = () => {
         style={styles.gradient}
       >
         <SafeAreaView style={{flex: 1}}>
-          <View style={[styles.container, {paddingTop: 24}]}> {/* Add extra padding for header */}
+          <View style={[styles.container, {paddingTop: 24}]}>
             <View style={styles.header}>
               <Text style={styles.title}>My Medications</Text>
             </View>
 
-          {medications.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="medical-outline" size={64} color="#F44336" />
-              <Text style={styles.emptyText}>No medications added yet</Text>
-              <TouchableOpacity
-                style={styles.addFirstButton}
-                onPress={() => setShowAddModal(true)}
-              >
-                <Text style={styles.addFirstButtonText}>Add Your First Medication</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <FlatList
-              data={medications}
-              renderItem={renderMedicationItem}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.listContainer}
-              showsVerticalScrollIndicator={false}
-            />
-          )}
-          {/* Floating Plus Button */}
-          <TouchableOpacity
-            style={{position:'absolute',bottom:90,right:24,backgroundColor:'#F44336',width:60,height:60,borderRadius:30,justifyContent:'center',alignItems:'center',elevation:5,shadowColor:'#000',shadowOpacity:0.3,shadowRadius:8,shadowOffset:{width:2,height:2}, zIndex: 100}}
-            onPress={()=>setShowAddModal(true)}
-          >
-            <Ionicons name="add" size={36} color="#fff" />
-          </TouchableOpacity>
-        </View>
-        {/* Render Modal as sibling to main content to overlay tab bar */}
-        <AddMedicationModal
-          visible={showAddModal}
-          onClose={()=>setShowAddModal(false)}
-          onDone={handleAddMedication}
-          coverScreen={true}
-          propagateSwipe={true}
-        />
-      </SafeAreaView>
+            {medications.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="medical-outline" size={64} color="#F44336" />
+                <Text style={styles.emptyText}>No medications added yet</Text>
+                <TouchableOpacity
+                  style={styles.addFirstButton}
+                  onPress={() => setShowAddModal(true)}
+                >
+                  <Text style={styles.addFirstButtonText}>Add Your First Medication</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={{ flex: 1, width: '100%' }}>
+                <FlatList
+                  data={medications}
+                  renderItem={renderMedicationItem}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.listContainer}
+                  style={styles.listContent}
+                  showsVerticalScrollIndicator={true}
+                  scrollEnabled={true}
+                  bounces={true}
+                  nestedScrollEnabled={true}
+                />
+              </View>
+            )}
+            
+            {/* Floating Plus Button */}
+            <TouchableOpacity
+              style={{
+                position: 'absolute',
+                bottom: 90,
+                right: 24,
+                backgroundColor: '#F44336',
+                width: 60,
+                height: 60,
+                borderRadius: 30,
+                justifyContent: 'center',
+                alignItems: 'center',
+                elevation: 5,
+                shadowColor: '#000',
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+                shadowOffset: {width: 2, height: 2},
+                zIndex: 100
+              }}
+              onPress={() => setShowAddModal(true)}
+            >
+              <Ionicons name="add" size={36} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Add Medication Modal */}
+          <AddMedicationModal
+            visible={showAddModal}
+            onClose={() => setShowAddModal(false)}
+            onDone={handleAddMedication}
+            coverScreen={true}
+            propagateSwipe={true}
+          />
+        </SafeAreaView>
       </LinearGradient>
     </>
   );

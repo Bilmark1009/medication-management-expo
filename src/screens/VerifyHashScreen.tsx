@@ -37,6 +37,7 @@ const VerifyHashScreen: React.FC<VerifyHashScreenProps> = ({ route, navigation }
     name: string;
     email: string;
     passwordHash: string;
+    passwordSalt: string;
     emailHash: string;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,6 +56,7 @@ const VerifyHashScreen: React.FC<VerifyHashScreenProps> = ({ route, navigation }
             name: user.name,
             email: user.email,
             passwordHash: user.password_hash,
+            passwordSalt: user.password_salt || 'No salt (legacy)',
             emailHash: emailHash
           });
         }
@@ -134,6 +136,12 @@ const VerifyHashScreen: React.FC<VerifyHashScreenProps> = ({ route, navigation }
               <Text style={styles.label}>Password Hash:</Text>
               <Text style={[styles.value, styles.hashValue]} numberOfLines={1} ellipsizeMode="middle">
                 {userData?.passwordHash}
+              </Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.label}>Password Salt:</Text>
+              <Text style={[styles.value, styles.hashValue]} numberOfLines={1} ellipsizeMode="middle">
+                {userData?.passwordSalt}
               </Text>
             </View>
             <View style={styles.noteContainer}>

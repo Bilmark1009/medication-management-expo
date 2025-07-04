@@ -120,8 +120,8 @@ const TermsAndConditionsScreen: React.FC<TermsAndConditionsScreenProps> = ({ nav
           <Text style={[styles.paragraph, { marginBottom: 20 }]}>
             If you have any questions about these Terms, please contact us at:
             {'\n\n'}Email: support@tumara.com
-            {'\n'}Address: [Your Company Address], Philippines
-            {'\n'}Phone: [Your Contact Number]
+            {'\n'}Address: Agujo Daanbantayan Cebu, Philippines
+            {'\n'}Phone: 0945-325-8777
           </Text>
         </ScrollView>
 

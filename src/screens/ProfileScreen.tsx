@@ -249,10 +249,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
+    <View style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+      >
       <View style={styles.headerContainer}>
         <Text style={styles.headerTitle}>Profile</Text>
         <TouchableOpacity style={styles.profileImageContainer} onPress={() => setProfileOptionsVisible(true)}>
@@ -315,7 +317,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         <Text style={styles.profileRole}>{profile.role}</Text>
       </View>
 
-      <ScrollView style={styles.scrollView}>
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.sectionTitle}>Account Settings</Text>
 
         {renderSettingsItem(
@@ -347,7 +353,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 };
 
@@ -404,11 +411,12 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-    marginTop: -20,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    backgroundColor: '#000000', // Black background for scroll view
+    backgroundColor: '#000000',
+  },
+  scrollContent: {
     paddingHorizontal: 20,
+    paddingBottom: 30,
+    paddingTop: 20,
   },
   sectionTitle: {
     fontSize: 20,

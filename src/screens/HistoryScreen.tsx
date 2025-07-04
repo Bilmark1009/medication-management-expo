@@ -6,77 +6,59 @@ import { Ionicons } from '@expo/vector-icons';
 
 interface Medication {
   name: string;
+  form: string;
   dosage: string;
   frequency: string;
-  time: string;
-  taken: boolean;
+  status: 'taken' | 'missed';
   id: string;
   date: string;
-  status: string;
-  notes: string;
-  actual_time: string;
 }
 
-const mockHistory = [
+const mockHistory: Medication[] = [
   {
     id: '1',
     name: 'Ibuprofen',
+    form: 'Tablet',
     dosage: '200mg',
     frequency: 'Every 6 hours',
-    time: '09:00',
-    taken: true,
-    date: '2025-05-29T09:05:00',
     status: 'taken',
-    notes: 'Took with breakfast',
-    actual_time: '09:05',
+    date: '2025-05-29T09:05:00',
   },
   {
     id: '2',
     name: 'Vitamin D',
+    form: 'Capsule',
     dosage: '1000 IU',
     frequency: 'Daily',
-    time: '08:00',
-    taken: false,
-    date: '2025-05-29T08:00:00',
     status: 'missed',
-    notes: 'Forgot to take',
-    actual_time: null,
+    date: '2025-05-29T08:00:00',
   },
   {
     id: '3',
     name: 'Paracetamol',
+    form: 'Tablet',
     dosage: '500mg',
     frequency: 'Twice daily',
-    time: '14:00',
-    taken: true,
-    date: '2025-05-28T14:10:00',
     status: 'taken',
-    notes: '',
-    actual_time: '14:10',
+    date: '2025-05-28T14:10:00',
   },
   {
     id: '4',
     name: 'Aspirin',
+    form: 'Tablet',
     dosage: '100mg',
     frequency: 'Once daily',
-    time: '07:30',
-    taken: false,
+    status: 'missed',
     date: '2025-05-27T07:30:00',
-    status: 'skipped',
-    notes: 'Had stomach ache',
-    actual_time: null,
   },
   {
     id: '5',
     name: 'Metformin',
+    form: 'Tablet',
     dosage: '850mg',
     frequency: 'Twice daily',
-    time: '19:00',
-    taken: true,
-    date: '2025-05-27T19:05:00',
     status: 'taken',
-    notes: '',
-    actual_time: '19:05',
+    date: '2025-05-27T19:05:00',
   },
 ];
 
@@ -99,21 +81,23 @@ const HistoryScreen = () => {
         <View style={styles.historyHeader}>
           <View style={styles.medicationInfo}>
             <Text style={styles.medicationName}>{item.name}</Text>
-            <Text style={styles.medicationDetails}>{item.dosage} - {item.frequency}</Text>
-            <Text style={styles.medicationDetails}>Scheduled: {item.time}</Text>
-            {item.actual_time && (
-              <Text style={styles.medicationDetails}>Actual: {item.actual_time}</Text>
-            )}
-            {item.notes ? (
-              <Text style={styles.noteText}>Note: {item.notes}</Text>
-            ) : null}
+            <Text style={styles.medicationDetails}>
+              {item.dosage} • {item.form} • {item.frequency}
+            </Text>
           </View>
           <View style={styles.statusContainer}>
-            {item.status === 'taken' && <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />}
-            {item.status === 'missed' && <Ionicons name="close-circle" size={24} color="#FF0000" />}
-            {item.status === 'skipped' && <Ionicons name="remove-circle" size={24} color="#FFC107" />}
-            <Text style={[styles.statusText, { color: item.status === 'taken' ? "#4CAF50" : item.status === 'skipped' ? "#FFC107" : "#FF0000" }]}> 
-              {item.status === 'taken' ? 'Taken' : item.status === 'skipped' ? 'Skipped' : 'Missed'}
+            {item.status === 'taken' ? (
+              <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
+            ) : (
+              <Ionicons name="close-circle" size={24} color="#FF0000" />
+            )}
+            <Text 
+              style={[
+                styles.statusText, 
+                { color: item.status === 'taken' ? "#4CAF50" : "#FF0000" }
+              ]}
+            >
+              {item.status === 'taken' ? 'Taken' : 'Missed'}
             </Text>
           </View>
         </View>
@@ -131,7 +115,7 @@ const HistoryScreen = () => {
         <Text style={styles.title}>Medication History</Text>
         <Text style={styles.subtitle}>Track your medication adherence</Text>
       </View>
-      <View>
+      <View style={styles.contentContainer}>
         <View style={styles.summaryBox}>
           <Ionicons name="stats-chart-outline" size={22} color="#4CAF50" style={{marginRight: 8}} />
           <Text style={styles.summaryText}>
@@ -165,6 +149,10 @@ const HistoryScreen = () => {
             renderItem={renderHistoryItem}
             keyExtractor={(item, index) => `${item.id}-${index}`}
             contentContainerStyle={styles.listContainer}
+            style={{ flex: 1 }}
+            showsVerticalScrollIndicator={true}
+            bounces={true}
+            nestedScrollEnabled={true}
           />
         )}
       </View>
@@ -177,6 +165,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
     padding: 16,
+  },
+  contentContainer: {
+    flexGrow: 1,
   },
   header: {
     marginBottom: 24,
@@ -225,7 +216,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   listContainer: {
-    paddingBottom: 16,
+    paddingBottom: 24,
+    flexGrow: 1,
   },
   historyCard: {
     backgroundColor: '#1A1A1A',

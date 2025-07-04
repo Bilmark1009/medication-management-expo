@@ -102,82 +102,95 @@ const PrivacySecurityScreen: React.FC<PrivacySecurityScreenProps> = ({ navigatio
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#FF0000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Privacy & Security</Text>
-      </View>
-
-      <ScrollView style={styles.scrollView}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Security</Text>
           
-          <SecurityItem
-            icon="finger-print"
-            title="Biometric Authentication"
-            description="Use your fingerprint or face to log in"
-            showSwitch
-            switchValue={biometricEnabled}
-            onSwitchValueChange={toggleBiometric}
-          />
-          
-          <SecurityItem
-            icon="lock-closed"
-            title="App Lock"
-            description="Require authentication when opening the app"
-            showSwitch
-            switchValue={appLockEnabled}
-            onSwitchValueChange={toggleAppLock}
-          />
-          
-          <SecurityItem
-            icon="time"
-            title="Auto-Logout"
-            description="Automatically log out after 5 minutes of inactivity"
-            showSwitch
-            switchValue={autoLogoutEnabled}
-            onSwitchValueChange={toggleAutoLogout}
-          />
+          <View style={styles.settingItem}>
+            <View style={styles.settingInfo}>
+              <Ionicons name="finger-print" size={24} color="#FF3A44" style={styles.settingIcon} />
+              <View>
+                <Text style={styles.settingTitle}>Biometric Authentication</Text>
+                <Text style={styles.settingDescription}>Use your fingerprint or face to log in</Text>
+              </View>
+            </View>
+            <Switch
+              value={biometricEnabled}
+              onValueChange={toggleBiometric}
+              trackColor={{ false: '#767577', true: '#FF3A4455' }}
+              thumbColor={biometricEnabled ? '#FF3A44' : '#f4f3f4'}
+            />
+          </View>
+
+          <View style={styles.settingItem}>
+            <View style={styles.settingInfo}>
+              <Ionicons name="lock-closed" size={24} color="#FF3A44" style={styles.settingIcon} />
+              <View>
+                <Text style={styles.settingTitle}>App Lock</Text>
+                <Text style={styles.settingDescription}>Require authentication when opening the app</Text>
+              </View>
+            </View>
+            <Switch
+              value={appLockEnabled}
+              onValueChange={toggleAppLock}
+              trackColor={{ false: '#767577', true: '#FF3A4455' }}
+              thumbColor={appLockEnabled ? '#FF3A44' : '#f4f3f4'}
+            />
+          </View>
+
+          <View style={styles.settingItem}>
+            <View style={styles.settingInfo}>
+              <Ionicons name="log-out" size={24} color="#FF3A44" style={styles.settingIcon} />
+              <View>
+                <Text style={styles.settingTitle}>Auto Logout</Text>
+                <Text style={styles.settingDescription}>Log out after 5 minutes of inactivity</Text>
+              </View>
+            </View>
+            <Switch
+              value={autoLogoutEnabled}
+              onValueChange={toggleAutoLogout}
+              trackColor={{ false: '#767577', true: '#FF3A4455' }}
+              thumbColor={autoLogoutEnabled ? '#FF3A44' : '#f4f3f4'}
+            />
+          </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Data & Privacy</Text>
+          <Text style={styles.sectionTitle}>Privacy</Text>
           
-          <SecurityItem
-            icon="analytics"
-            title="Usage Analytics"
-            description="Help us improve by sharing anonymous usage data"
-            showSwitch
-            switchValue={analyticsEnabled}
-            onSwitchValueChange={toggleAnalytics}
-          />
-          
-          <SecurityItem
-            icon="document-text"
-            title="Privacy Policy"
-            description="Read our privacy policy"
+          <View style={styles.settingItem}>
+            <View style={styles.settingInfo}>
+              <Ionicons name="analytics" size={24} color="#FF3A44" style={styles.settingIcon} />
+              <View>
+                <Text style={styles.settingTitle}>Usage Analytics</Text>
+                <Text style={styles.settingDescription}>Help us improve by sharing usage data</Text>
+              </View>
+            </View>
+            <Switch
+              value={analyticsEnabled}
+              onValueChange={toggleAnalytics}
+              trackColor={{ false: '#767577', true: '#FF3A4455' }}
+              thumbColor={analyticsEnabled ? '#FF3A44' : '#f4f3f4'}
+            />
+          </View>
+
+          <TouchableOpacity 
+            style={[styles.settingItem, { justifyContent: 'space-between' }]}
             onPress={openPrivacyPolicy}
-          />
-          
-          <SecurityItem
-            icon="document-text"
-            title="Terms of Service"
-            description="Read our terms of service"
-            onPress={openTermsOfService}
-          />
+          >
+            <View style={styles.settingInfo}>
+              <Ionicons name="document-text" size={24} color="#FF3A44" style={styles.settingIcon} />
+              <Text style={styles.settingTitle}>Privacy Policy</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
           
-          <SecurityItem
-            icon="log-out"
-            title="Logout All Devices"
-            description="Sign out of all devices"
+          <TouchableOpacity 
+            style={[styles.settingItem, { justifyContent: 'space-between' }]}
             onPress={() => {
               Alert.alert(
                 'Logout All Devices',
@@ -192,12 +205,16 @@ const PrivacySecurityScreen: React.FC<PrivacySecurityScreenProps> = ({ navigatio
                 ]
               );
             }}
-          />
-          
-          <SecurityItem
-            icon="trash"
-            title="Delete Account"
-            description="Permanently delete your account and all data"
+          >
+            <View style={styles.settingInfo}>
+              <Ionicons name="log-out" size={24} color="#FF3A44" style={styles.settingIcon} />
+              <Text style={styles.settingTitle}>Logout All Devices</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.settingItem, { justifyContent: 'space-between' }]}
             onPress={() => {
               Alert.alert(
                 'Delete Account',
@@ -218,12 +235,18 @@ const PrivacySecurityScreen: React.FC<PrivacySecurityScreenProps> = ({ navigatio
                 ]
               );
             }}
-          />
+          >
+            <View style={styles.settingInfo}>
+              <Ionicons name="trash" size={24} color="#FF3A44" style={styles.settingIcon} />
+              <Text style={styles.settingTitle}>Delete Account</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#666" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.versionContainer}>
           <Text style={styles.versionText}>App Version: 1.0.0</Text>
-          <Text style={styles.copyrightText}>© 2025 PillPal. All rights reserved.</Text>
+          <Text style={styles.copyrightText}> 2025 PillPal. All rights reserved.</Text>
         </View>
       </ScrollView>
     </View>
@@ -235,49 +258,61 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#000000',
-    borderBottomWidth: 1,
-    borderBottomColor: '#333333',
-  },
-  backButton: {
-    padding: 8,
-    marginRight: 8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FF0000',
-    textAlign: 'center',
-    flex: 1,
-    marginRight: 32,
-  },
   scrollView: {
     flex: 1,
-    padding: 16,
+  },
+  scrollContent: {
+    paddingBottom: 30,
+    paddingTop: 10,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: 20,
     backgroundColor: '#1A1A1A',
     borderRadius: 12,
-    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#333333',
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 12,
+    color: '#FF3A44',
+    padding: 16,
+    paddingBottom: 8,
+    backgroundColor: '#0D0D0D',
   },
-  securityItem: {
+  settingItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#333333',
+    borderBottomColor: '#2A2A2A',
+  },
+  settingInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  settingIcon: {
+    marginRight: 12,
+    width: 28,
+    textAlign: 'center',
+  },
+  settingTitle: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  settingDescription: {
+    fontSize: 13,
+    color: '#AAAAAA',
+    lineHeight: 18,
+    paddingRight: 10,
   },
   securityItemLeft: {
     flexDirection: 'row',
@@ -299,17 +334,21 @@ const styles = StyleSheet.create({
   },
   versionContainer: {
     alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 32,
+    marginTop: 24,
+    marginBottom: 40,
+    paddingHorizontal: 20,
   },
   versionText: {
-    color: '#888888',
-    fontSize: 12,
-    marginBottom: 4,
+    color: '#777777',
+    fontSize: 13,
+    marginBottom: 6,
+    textAlign: 'center',
   },
   copyrightText: {
-    color: '#666666',
+    color: '#555555',
     fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
 
