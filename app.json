@@ -28,14 +28,21 @@
       "favicon": "./assets/app_icon.png"
     },
     "scheme": "tumana",
-    "entryPoint": "./index.ts",
     "extra": {
       "eas": {
         "projectId": "45fb52b5-a437-4ad7-8fe6-6b3e371d2106"
-      }
+      }     
     },
     "plugins": [
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-dev-client",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app needs access to your photos to let you share medication images.",
+          "cameraPermission": "The app needs access to your camera to let you take photos of your medications."
+        }
+      ]
     ],
     "owner": "i.blmrk",
     "packagerOpts": {

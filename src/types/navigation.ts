@@ -33,5 +33,5 @@ export type Medication = {
   dosage: string;
   frequency: string;
   instructions?: string;
-  time: string; // Added time field for scheduling notifications
+  time: string;
 };

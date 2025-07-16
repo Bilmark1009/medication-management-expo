@@ -26,7 +26,7 @@ type Medication = BaseMedication & {
   duration?: string;
   times?: Date[]; // Add times property for the medication form
 };
-import { schedulePushNotification, cancelScheduledNotification } from '../services/notifications';
+
 
 const styles = StyleSheet.create({
   gradient: {
@@ -41,6 +41,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 24,
+  },
+  testButton: {
+    backgroundColor: '#4CAF50',
+    padding: 8,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  testButtonText: {
+    color: 'white',
+    fontSize: 12,
   },
   title: {
     fontSize: 28,
@@ -317,7 +327,11 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
               <Text style={{color:'#fff',fontSize:24,fontWeight:'bold',marginBottom:16}}>Step 4: Choose Frequency</Text>
               <View style={{marginBottom:16}}>
                 {FREQUENCIES.map(f => (
-                  <TouchableOpacity key={f.key} onPress={()=>setFrequency(f)} style={{backgroundColor:frequency?.key===f.key?'#F44336':'#232323',borderRadius:8,padding:14,marginVertical:4}}>
+                  <TouchableOpacity
+                    key={f.key}
+                    onPress={()=>setFrequency(f)}
+                    style={{backgroundColor:frequency?.key===f.key?'#F44336':'#232323',borderRadius:8,padding:14,marginVertical:4}}
+                  >
                     <Text style={{color:frequency?.key===f.key?'#fff':'#aaa',fontSize:16}}>{f.key}</Text>
                   </TouchableOpacity>
                 ))}
@@ -513,11 +527,6 @@ const MedicationScreen: React.FC = () => {
         return;
       }
       
-      // Cancel the notification if it exists
-      if (med.notification_id) {
-        await cancelScheduledNotification(med.notification_id);
-      }
-      
       await executeQuery(
         'DELETE FROM medications WHERE user_id = ? AND name = ? AND time = ?;',
         [currentUser.id, med.name, med.time]
@@ -535,36 +544,49 @@ const MedicationScreen: React.FC = () => {
     dosage: string; 
     frequency: string; 
     times: Date[]; 
-    instructions?: string; 
     duration?: string 
   }) => {
     try {
+      // 1. Get current user
       const currentUser = JSON.parse(await AsyncStorage.getItem('currentUser') || '{}');
-      if (!currentUser?.id) throw new Error('User not logged in');
+      if (!currentUser?.id) {
+        const error = new Error('User not logged in');
+        console.error('Authentication error:', error);
+        throw error;
+      }
       
-      // Insert each time as a separate medication entry
+      // 2. Insert each time as a separate medication entry
       for (const time of med.times) {
-        const result = await executeQuery(
-          'INSERT INTO medications (user_id, name, form, dosage, frequency, time, instructions, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?);',
-          [currentUser.id, med.name, med.form, med.dosage, med.frequency, time.toISOString(), med.instructions || '', med.duration || '']
-        );
-        
-        // Schedule notification for the new medication
-        if (result && result.insertId) {
-          const newMed = {
-            id: result.insertId.toString(),
-            ...med,
-            time: time.toISOString()
-          };
-          await schedulePushNotification(newMed);
+        try {
+          // 3. Insert into database
+          const result = await executeQuery(
+            `INSERT INTO medications (
+              user_id, name, form, dosage, 
+              frequency, time, duration
+            ) VALUES (?, ?, ?, ?, ?, ?, ?);`,
+            [
+              currentUser.id, 
+              med.name, 
+              med.form || null, 
+              med.dosage, 
+              med.frequency, 
+              time.toISOString(), 
+              med.duration || null
+            ]
+          );
+        } catch (error) {
+          console.error('Error in handleAddMedication:', error);
         }
       }
       
-      // Reload medications to show the new entries
+      console.log('=== MEDICATION ADDITION COMPLETE ===');
+      
+      // 5. Reload medications to show the new entries
       await loadMedications();
+      
     } catch (error) {
-      console.error('Error adding medication:', error);
-      Alert.alert('Error', 'Failed to add medication');
+      console.error('❌ Error in handleAddMedication:', error);
+      Alert.alert('Error', 'Failed to add medication. Please check the logs for details.');
     }
   };
 
@@ -678,6 +700,7 @@ const MedicationScreen: React.FC = () => {
           <View style={[styles.container, {paddingTop: 24}]}>
             <View style={styles.header}>
               <Text style={styles.title}>My Medications</Text>
+ 
             </View>
 
             {medications.length === 0 ? (
