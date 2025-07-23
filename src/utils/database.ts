@@ -26,6 +26,7 @@ interface PersonalInfo {
 const dbPromise = SQLite.openDatabaseAsync('pillpal.db');
 
 // Initialize the database
+// **FIXED DATABASE INITIALIZATION** - Replace your initializeDatabase function
 export const initializeDatabase = async () => {
   try {
     const db = await dbPromise;
@@ -42,7 +43,7 @@ export const initializeDatabase = async () => {
       );
     `);
 
-    // Create medications table if it doesn't exist
+    // **FIXED: Single medication table definition with ALL columns**
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS medications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,12 +57,13 @@ export const initializeDatabase = async () => {
         duration TEXT,
         notification_id TEXT,
         notification_enabled BOOLEAN DEFAULT 1,
+        timezone_offset INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
       );
     `);
     
-    // Check if we need to migrate the schema
+    // Check if we need to migrate the users schema
     try {
       const tableInfo = await db.getAllAsync("PRAGMA table_info(users)");
       const hasSaltColumn = tableInfo.some((column: any) => column.name === 'password_salt');
@@ -96,62 +98,40 @@ export const initializeDatabase = async () => {
       throw error;
     }
 
-    // Migration: Ensure notification_id column exists
+    // **FIXED: Check and add missing columns to medications table**
     const columns = await db.getAllAsync(`PRAGMA table_info(medications);`);
-    const hasNotificationId = columns.some((col: any) => col.name === 'notification_id');
+    console.log('Current medication table columns:', columns.map((col: any) => col.name));
     
-    if (!hasNotificationId) {
-      await db.execAsync(`ALTER TABLE medications ADD COLUMN notification_id TEXT;`);
-      console.log('Added notification_id column to medications table');
-    }
-    
-    // Migration: Ensure notification_enabled column exists
-    const hasNotificationEnabled = columns.some((col: any) => col.name === 'notification_enabled');
-    
-    if (!hasNotificationEnabled) {
-      await db.execAsync(`ALTER TABLE medications ADD COLUMN notification_enabled BOOLEAN DEFAULT 1;`);
-      console.log('Added notification_enabled column to medications table');
-    }
-    const hasDuration = columns.some((col: any) => col.name === 'duration');
-    if (!hasDuration) {
-      try {
-        await db.execAsync(`ALTER TABLE medications ADD COLUMN duration TEXT;`);
-        console.log('Migrated: Added duration column to medications table');
-      } catch (e) {
-        // Ignore error if column already exists
-        console.log('Duration column migration error:', e);
-      }
-    }
-    // Migration: Add form column if it does not exist
-    const hasForm = columns.some((col: any) => col.name === 'form');
-    if (!hasForm) {
-      try {
-        await db.execAsync(`ALTER TABLE medications ADD COLUMN form TEXT;`);
-        console.log('Migrated: Added form column to medications table');
-      } catch (e) {
-        // Ignore error if column already exists
-        console.log('Form column migration error:', e);
+    // Check for each required column and add if missing
+    const requiredColumns = [
+      { name: 'notification_id', type: 'TEXT', defaultValue: null },
+      { name: 'notification_enabled', type: 'BOOLEAN', defaultValue: '1' },
+      { name: 'duration', type: 'TEXT', defaultValue: null },
+      { name: 'form', type: 'TEXT', defaultValue: null },
+      { name: 'timezone_offset', type: 'INTEGER', defaultValue: null },
+      { name: 'created_at', type: 'DATETIME', defaultValue: 'CURRENT_TIMESTAMP' }
+    ];
+
+    for (const column of requiredColumns) {
+      const hasColumn = columns.some((col: any) => col.name === column.name);
+      
+      if (!hasColumn) {
+        try {
+          const alterQuery = column.defaultValue 
+            ? `ALTER TABLE medications ADD COLUMN ${column.name} ${column.type} DEFAULT ${column.defaultValue};`
+            : `ALTER TABLE medications ADD COLUMN ${column.name} ${column.type};`;
+          
+          await db.execAsync(alterQuery);
+          console.log(`Added ${column.name} column to medications table`);
+        } catch (e) {
+          console.log(`Column ${column.name} migration error:`, e);
+        }
       }
     }
 
-    // await db.execAsync(`
-    //   DROP TABLE IF EXISTS medications;
-    // `);
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS medications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        form TEXT,
-        dosage TEXT NOT NULL,
-        frequency TEXT NOT NULL,
-        time TEXT NOT NULL,
-        instructions TEXT,
-        duration TEXT,
-        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-      );
-    `);
-
+    // **REMOVED: The duplicate medication table creation that was overwriting the first one**
+    
+    // Create emergency_contacts table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS emergency_contacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,7 +145,7 @@ export const initializeDatabase = async () => {
       );
     `);
 
-    // Create or update personal_information table
+    // Create personal_information table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS personal_information (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -182,9 +162,9 @@ export const initializeDatabase = async () => {
       );
     `);
     
-    console.log('Database initialized successfully');
+    console.log('✅ Database initialized successfully with fixed schema');
   } catch (error) {
-    console.error('Error initializing database:', error);
+    console.error('❌ Error initializing database:', error);
     throw error;
   }
 };

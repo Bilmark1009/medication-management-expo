@@ -1,3 +1,4 @@
+import * as Notifications from 'expo-notifications';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -8,8 +9,10 @@ import {
   FlatList,
   Alert,
   ActivityIndicator,
-  TextInput, // <-- add TextInput import
-  SafeAreaView
+  TextInput,
+  SafeAreaView,
+  Modal,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -17,129 +20,26 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { executeQuery } from '../utils/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Medication as BaseMedication } from '../types/navigation';
+import { 
+  configureNotifications, 
+  requestNotificationPermission,
+  scheduleMedicationNotification,
+  cancelAllNotifications,
+  debugNotificationService,
+  cancelScheduledNotification,
+  type MedicationNotification
+} from '../services/notificationService';
+import ReactNativeModal from 'react-native-modal';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
-// Extend the base Medication type with our additional fields
+// Extended Medication type
 type Medication = BaseMedication & {
   time: string;
   timeObj: Date;
   notification_id?: string;
   duration?: string;
-  times?: Date[]; // Add times property for the medication form
+  times?: Date[];
 };
-
-
-const styles = StyleSheet.create({
-  gradient: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-    padding: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  testButton: {
-    backgroundColor: '#4CAF50',
-    padding: 8,
-    borderRadius: 8,
-    marginLeft: 10,
-  },
-  testButtonText: {
-    color: 'white',
-    fontSize: 12,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  addButton: {
-    backgroundColor: '#F44336',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  emptyText: {
-    color: '#888888',
-    fontSize: 16,
-    marginVertical: 16,
-  },
-  addFirstButton: {
-    backgroundColor: '#F44336',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  addFirstButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  listContainer: {
-    paddingBottom: 100, // Extra padding to account for the floating button
-    paddingTop: 8,
-  },
-  listContent: {
-    flexGrow: 1,
-  },
-  medicationCard: {
-    backgroundColor: '#1E1E1E',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  medicationInfo: {
-    flex: 1,
-  },
-  medicationName: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  medicationDetails: {
-    color: '#888888',
-    fontSize: 14,
-  },
-  medicationNotes: {
-    color: '#BBBBBB',
-    fontSize: 13,
-    marginTop: 8,
-    fontStyle: 'italic',
-  },
-  medicationActions: {
-    flexDirection: 'row',
-    marginLeft: 12,
-  },
-  actionButton: {
-    padding: 8,
-    marginLeft: 8,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000000',
-  },
-});
-
-// --- AddMedicationModal Component ---
-import ReactNativeModal from 'react-native-modal';
 
 const MEDICATION_FORMS = [
   { key: 'Tablet', icon: 'tablet-portrait-outline' },
@@ -158,6 +58,7 @@ const MEDICATION_FORMS = [
   { key: 'Chewable', icon: 'cafe-outline' },
   { key: 'Granules', icon: 'grid-outline' }
 ];
+
 const FREQUENCIES = [
   { key: 'Once daily', times: 1 },
   { key: 'Twice daily', times: 2 },
@@ -167,10 +68,7 @@ const FREQUENCIES = [
   { key: 'Every 8 hours', times: 3 },
 ];
 
-// --- Use react-native-modal-datetime-picker for time selection ---
-import { Modal } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
-
+// AddMedicationModal Component with DateTimePicker
 const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
   const [step, setStep] = useState(1);
   const [medName, setMedName] = useState('');
@@ -178,74 +76,136 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
   const [dosage, setDosage] = useState('');
   const [frequency, setFrequency] = useState<any>(null);
   const [times, setTimes] = useState<Date[]>([]);
-  const [showTimePicker, setShowTimePicker] = useState<{show: boolean, idx: number}>({show: false, idx: 0});
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [currentTimeIndex, setCurrentTimeIndex] = useState(0);
   const [duration, setDuration] = useState<string>('');
 
+  // **FIXED** Time generation with proper local time handling
   useEffect(() => {
     if (frequency && times.length !== frequency.times) {
-      // For multi-intake frequencies, auto-generate times spaced evenly from 08:00
       const count = frequency.times;
+      const now = new Date();
+      
       if (count > 1) {
-        const base = new Date();
-        base.setHours(8, 0, 0, 0); // Start at 08:00
+        // Create evenly spaced times starting from 8 AM today
+        const startTime = new Date();
+        startTime.setHours(8, 0, 0, 0); // 8:00 AM today
+        
         const interval = 24 / count; // hours between doses
         const generated: Date[] = [];
+        
         for (let i = 0; i < count; i++) {
-          const t = new Date(base.getTime());
-          t.setHours(base.getHours() + Math.round(i * interval));
-          generated.push(new Date(t));
+          const newTime = new Date(startTime);
+          newTime.setHours(startTime.getHours() + Math.round(i * interval), 0, 0, 0);
+          
+          // If this time has passed today, move to tomorrow
+          if (newTime <= now) {
+            newTime.setDate(newTime.getDate() + 1);
+          }
+          
+          generated.push(newTime);
         }
+        
         setTimes(generated);
+        console.log('🕐 Generated times for multiple doses:', generated.map(t => 
+          `${t.toLocaleDateString()} ${t.toLocaleTimeString()}`
+        ));
       } else {
-        setTimes([new Date()]);
+        // Single dose - default to 1 hour from now
+        const singleTime = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour from now
+        singleTime.setSeconds(0, 0); // Clear seconds and milliseconds
+        
+        setTimes([singleTime]);
+        console.log('🕐 Generated single dose time:', singleTime.toLocaleString());
       }
     }
   }, [frequency]);
 
-  const handleTimeChange = (event: any, selectedDate?: Date) => {
+  // **FIXED** DateTimePicker change handler
+  const onDateTimeChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    
     if (event.type === 'set' && selectedDate) {
-      let newTimes = [...times];
-      if (showTimePicker.idx === 0 && frequency && frequency.times > 1) {
-        // User is updating the first intake, update all subsequent times based on interval
-        const count = frequency.times;
-        const interval = 24 / count;
-        const base = new Date(selectedDate);
-        newTimes = [];
-        for (let i = 0; i < count; i++) {
-          const t = new Date(base.getTime() + i * interval * 60 * 60 * 1000);
-          newTimes.push(t);
-        }
-      } else {
-        newTimes[showTimePicker.idx] = selectedDate;
+      const now = new Date();
+      let finalTime = new Date(selectedDate);
+      
+      // Ensure we're setting time for today
+      finalTime.setFullYear(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      // If the selected time has passed today, schedule for tomorrow
+      if (finalTime <= now) {
+        finalTime.setDate(finalTime.getDate() + 1);
+        console.log(`⏭️ Selected time has passed, moved to tomorrow: ${finalTime.toLocaleString()}`);
       }
+      
+      console.log(`🕐 Time selected: ${finalTime.toLocaleString()}`);
+      
+      // Update the specific time in the array
+      const newTimes = [...times];
+      newTimes[currentTimeIndex] = finalTime;
       setTimes(newTimes);
+      
+      // For multiple doses, update subsequent times based on the first one
+      if (currentTimeIndex === 0 && frequency && frequency.times > 1) {
+        const count = frequency.times;
+        const interval = 24 / count; // hours between doses
+        const updatedTimes = [];
+        
+        for (let i = 0; i < count; i++) {
+          const newTime = new Date(finalTime);
+          newTime.setHours(finalTime.getHours() + Math.round(i * interval), finalTime.getMinutes(), 0, 0);
+          
+          // If any subsequent time passes midnight, adjust to next day
+          if (i > 0 && newTime.getHours() < finalTime.getHours()) {
+            newTime.setDate(newTime.getDate() + 1);
+          }
+          
+          updatedTimes.push(newTime);
+        }
+        
+        setTimes(updatedTimes);
+        console.log('🕐 Updated all times based on first selection:', updatedTimes.map(t => 
+          t.toLocaleTimeString()
+        ));
+      }
     }
-    setShowTimePicker({show: false, idx: 0});
   };
 
   const reset = () => {
-    setStep(1); setMedName(''); setMedForm(null); setDosage(''); setFrequency(null); setTimes([]); setDuration('');
+    setStep(1);
+    setMedName('');
+    setMedForm(null);
+    setDosage('');
+    setFrequency(null);
+    setTimes([]);
+    setDuration('');
+    setShowDatePicker(false);
+    setCurrentTimeIndex(0);
   };
 
-  // Ensure steps go up to 6; update navigation logic if needed
-
-  // Initialize times when entering step 5 or 6
-  useEffect(() => {
-    if ((step === 5 || step === 6) && times.length === 0) {
-      setTimes([new Date()]);
-    }
-  }, [step]);
-
   const handleDone = () => {
-    onDone({ name: medName, form: medForm, dosage, frequency: frequency.key, times, duration });
+    console.log('📋 Submitting medication with times:', times.map(t => ({
+      local: t.toLocaleString(),
+      iso: t.toISOString(),
+      timestamp: t.getTime()
+    })));
+    
+    onDone({ 
+      name: medName, 
+      form: medForm, 
+      dosage, 
+      frequency: frequency.key, 
+      times, 
+      duration 
+    });
     reset();
     onClose();
   };
 
-
   return (
     <ReactNativeModal isVisible={visible} style={{margin:0}}>
       <View style={{flex:1, backgroundColor:'#181818'}}>
+        {/* Header with Back/Close buttons */}
         <View style={{position:'absolute',top:40,left:0,right:0,zIndex:10,flexDirection:'row',justifyContent:'space-between',alignItems:'center',width:'100%',paddingHorizontal:16}}>
           <TouchableOpacity
             onPress={() => {
@@ -256,7 +216,7 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
                 onClose();
               }
             }}
-            style={{flexDirection:'row',alignItems:'center',backgroundColor:'rgba(44,44,44,0.9)',borderRadius:8,paddingVertical:8,paddingHorizontal:14,elevation:5,shadowColor:'#000',shadowOpacity:0.2,shadowRadius:4,shadowOffset:{width:1,height:1}}}
+            style={{flexDirection:'row',alignItems:'center',backgroundColor:'rgba(44,44,44,0.9)',borderRadius:8,paddingVertical:8,paddingHorizontal:14,elevation:5}}
           >
             <Ionicons name="arrow-back" size={28} color="#fff" />
             <Text style={{color:'#fff',fontSize:16,marginLeft:6,fontWeight:'600'}}>Back</Text>
@@ -265,7 +225,9 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
             <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
         </View>
+
         <View style={{flex:1, justifyContent:'center', alignItems:'center', padding:24}}>
+          {/* Step 1: Medication Name */}
           {step === 1 && (
             <View style={{width:'100%'}}>
               <Text style={{color:'#fff',fontSize:24,fontWeight:'bold',marginBottom:16}}>Step 1: Medication Name</Text>
@@ -281,27 +243,43 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
                   />
                 </View>
               </View>
-              <TouchableOpacity style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center'}} disabled={!medName.trim()} onPress={()=>setStep(2)}>
+              <TouchableOpacity 
+                style={{backgroundColor: medName.trim() ? '#F44336' : '#666',padding:14,borderRadius:8,alignItems:'center'}} 
+                disabled={!medName.trim()} 
+                onPress={()=>setStep(2)}
+              >
                 <Text style={{color:'#fff',fontWeight:'bold',fontSize:18}}>Next</Text>
               </TouchableOpacity>
             </View>
           )}
+
+          {/* Step 2: Medication Form */}
           {step === 2 && (
             <View style={{width:'100%'}}>
               <Text style={{color:'#fff',fontSize:24,fontWeight:'bold',marginBottom:16}}>Step 2: Select Medication Form</Text>
               <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16,justifyContent:'center'}}>
                 {MEDICATION_FORMS.map(f => (
-                  <TouchableOpacity key={f.key} onPress={()=>setMedForm(f.key)} style={{backgroundColor:medForm===f.key?'#F44336':'#232323',borderRadius:8,padding:12,margin:4,alignItems:'center',width:90}}>
+                  <TouchableOpacity 
+                    key={f.key} 
+                    onPress={()=>setMedForm(f.key)} 
+                    style={{backgroundColor:medForm===f.key?'#F44336':'#232323',borderRadius:8,padding:12,margin:4,alignItems:'center',width:90}}
+                  >
                     <Ionicons name={f.icon as any} size={28} color={medForm===f.key?'#fff':'#aaa'} />
                     <Text style={{color:medForm===f.key?'#fff':'#aaa',marginTop:4,fontSize:13}}>{f.key}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-              <TouchableOpacity style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center'}} disabled={!medForm} onPress={()=>setStep(3)}>
+              <TouchableOpacity 
+                style={{backgroundColor: medForm ? '#F44336' : '#666',padding:14,borderRadius:8,alignItems:'center'}} 
+                disabled={!medForm} 
+                onPress={()=>setStep(3)}
+              >
                 <Text style={{color:'#fff',fontWeight:'bold',fontSize:18}}>Next</Text>
               </TouchableOpacity>
             </View>
           )}
+
+          {/* Step 3: Dosage */}
           {step === 3 && (
             <View style={{width:'100%'}}>
               <Text style={{color:'#fff',fontSize:24,fontWeight:'bold',marginBottom:16}}>Step 3: Dosage</Text>
@@ -317,11 +295,17 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
                   />
                 </View>
               </View>
-              <TouchableOpacity style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center'}} disabled={!dosage.trim()} onPress={()=>setStep(4)}>
+              <TouchableOpacity 
+                style={{backgroundColor: dosage.trim() ? '#F44336' : '#666',padding:14,borderRadius:8,alignItems:'center'}} 
+                disabled={!dosage.trim()} 
+                onPress={()=>setStep(4)}
+              >
                 <Text style={{color:'#fff',fontWeight:'bold',fontSize:18}}>Next</Text>
               </TouchableOpacity>
             </View>
           )}
+
+          {/* Step 4: Frequency */}
           {step === 4 && (
             <View style={{width:'100%'}}>
               <Text style={{color:'#fff',fontSize:24,fontWeight:'bold',marginBottom:16}}>Step 4: Choose Frequency</Text>
@@ -336,44 +320,62 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
                   </TouchableOpacity>
                 ))}
               </View>
-              <TouchableOpacity style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center'}} disabled={!frequency} onPress={()=>setStep(5)}>
+              <TouchableOpacity 
+                style={{backgroundColor: frequency ? '#F44336' : '#666',padding:14,borderRadius:8,alignItems:'center'}} 
+                disabled={!frequency} 
+                onPress={()=>setStep(5)}
+              >
                 <Text style={{color:'#fff',fontWeight:'bold',fontSize:18}}>Next</Text>
               </TouchableOpacity>
             </View>
           )}
+
+          {/* Step 5: Set Schedule with DateTimePicker */}
           {step === 5 && (
             <View style={{width:'100%'}}>
               <Text style={{color:'#fff',fontSize:24,fontWeight:'bold',marginBottom:16}}>Step 5: Set Schedule</Text>
               <Text style={{color:'#aaa',marginBottom:12}}>Set intake times</Text>
-              {/* Ensure times is initialized with correct number of Date objects for the frequency */}
-              {(() => {
-                if (times.length !== (frequency?.times || 1)) {
-                  setTimes(Array.from({length: frequency?.times || 1}, (_,i) => times[i] || new Date()));
-                  return null;
-                }
-                return null;
-              })()}
-              {times.map((t, idx) => (
-                <TouchableOpacity key={idx} onPress={() => {
-                  // Defensive: ensure times[idx] is a Date
-                  if (!times[idx]) {
-                    const newTimes = [...times];
-                    newTimes[idx] = new Date();
-                    setTimes(newTimes);
-                  }
-                  setShowTimePicker({show:true,idx});
-                }} style={{backgroundColor:'#232323',borderRadius:8,padding:14,marginBottom:12,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
+              
+              {times.map((time, idx) => (
+                <TouchableOpacity 
+                  key={idx} 
+                  onPress={() => {
+                    setCurrentTimeIndex(idx);
+                    setShowDatePicker(true);
+                  }} 
+                  style={{backgroundColor:'#232323',borderRadius:8,padding:14,marginBottom:12,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}
+                >
                   <Text style={{color:'#fff',fontSize:18}}>Intake {idx+1}</Text>
-                  <Text style={{color:'#F44336',fontSize:16}}>{t?.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true})}</Text>
-                  <Ionicons name="time-outline" size={20} color="#F44336" style={{marginLeft:8}} />
+                  <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                    <Text style={{color:'#F44336',fontSize:16}}>
+                      {time.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true})}
+                    </Text>
+                    <Ionicons name="time-outline" size={20} color="#F44336" style={{marginLeft:8}} />
+                  </View>
                 </TouchableOpacity>
               ))}
-              {/* Add navigation to step 6 */}
-              <TouchableOpacity style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center',marginTop:12}} onPress={()=>setStep(6)}>
+              
+              <TouchableOpacity 
+                style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center',marginTop:12}} 
+                onPress={()=>setStep(6)}
+              >
                 <Text style={{color:'#fff',fontWeight:'bold',fontSize:18}}>Next</Text>
               </TouchableOpacity>
+
+              {/* DateTimePicker */}
+              {showDatePicker && (
+                <DateTimePicker
+                  value={times[currentTimeIndex] || new Date()}
+                  mode="time"
+                  is24Hour={false}
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={onDateTimeChange}
+                />
+              )}
             </View>
           )}
+
+          {/* Step 6: Duration */}
           {step === 6 && (
             <View style={{width:'100%'}}>
               <Text style={{color:'#fff',fontSize:24,fontWeight:'bold',marginBottom:16}}>Step 6: Set Duration</Text>
@@ -389,11 +391,17 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
                   </TouchableOpacity>
                 ))}
               </View>
-              <TouchableOpacity style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center',marginTop:8}} disabled={!duration} onPress={()=>setStep(7)}>
+              <TouchableOpacity 
+                style={{backgroundColor: duration ? '#F44336' : '#666',padding:14,borderRadius:8,alignItems:'center',marginTop:8}} 
+                disabled={!duration} 
+                onPress={()=>setStep(7)}
+              >
                 <Text style={{color:'#fff',fontWeight:'bold',fontSize:18}}>Next</Text>
               </TouchableOpacity>
             </View>
           )}
+
+          {/* Step 7: Confirmation */}
           {step === 7 && (
             <View style={{width:'100%'}}>
               <Text style={{color:'#fff',fontSize:24,fontWeight:'bold',marginBottom:16}}>Step 7: Confirm Details</Text>
@@ -404,85 +412,55 @@ const AddMedicationModal = ({ visible, onClose, onDone }: any) => {
                 <Text style={{color:'#fff',fontSize:18,marginBottom:8}}>Dosage: {dosage}</Text>
                 <Text style={{color:'#fff',fontSize:18,marginBottom:8}}>Frequency: {frequency?.key}</Text>
                 <Text style={{color:'#fff',fontSize:18,marginBottom:8}}>Duration: {duration}</Text>
-                <Text style={{color:'#fff',fontSize:18,marginBottom:8}}>Times: {times.map(t => t?.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true})).join(', ')}</Text>
+                <Text style={{color:'#fff',fontSize:18,marginBottom:8}}>
+                  Times: {times.map(t => t.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true})).join(', ')}
+                </Text>
               </View>
-              <TouchableOpacity style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center',marginBottom:8}} onPress={handleDone}>
+              <TouchableOpacity 
+                style={{backgroundColor:'#F44336',padding:14,borderRadius:8,alignItems:'center',marginBottom:8}} 
+                onPress={handleDone}
+              >
                 <Text style={{color:'#fff',fontWeight:'bold',fontSize:18}}>Add Medication</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{backgroundColor:'#aaa',padding:10,borderRadius:8,alignItems:'center'}} onPress={()=>setStep(1)}>
+              <TouchableOpacity 
+                style={{backgroundColor:'#aaa',padding:10,borderRadius:8,alignItems:'center'}} 
+                onPress={()=>setStep(1)}
+              >
                 <Text style={{color:'#fff',fontWeight:'bold',fontSize:16}}>Start Over</Text>
               </TouchableOpacity>
             </View>
           )}
-          <Modal
-            visible={showTimePicker.show}
-            transparent
-            animationType="slide"
-            onRequestClose={() => setShowTimePicker({show:false,idx:0})}
-          >
-            <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.6)',justifyContent:'center',alignItems:'center'}}>
-              <View style={{backgroundColor:'#222',borderRadius:12,padding:20,width:280,alignItems:'center'}}>
-                <Text style={{color:'#fff',fontSize:18,marginBottom:16}}>Select Time</Text>
-                <View style={{flexDirection:'row',justifyContent:'center',alignItems:'flex-end'}}>
-                    <View style={{alignItems:'center'}}>
-                      <Text style={{color:'#fff',fontSize:14,marginBottom:4}}>Hour</Text>
-                      <Picker
-                    selectedValue={times[showTimePicker.idx] ? times[showTimePicker.idx].getHours() : 8}
-                    style={{width:100,color:'#fff'}} itemStyle={{color:'#fff'}} dropdownIconColor="#fff"
-                    onValueChange={(hour: number) => {
-                      if (!times[showTimePicker.idx]) return;
-                      const t = new Date(times[showTimePicker.idx]);
-                      t.setHours(hour);
-                      const newTimes = [...times];
-                      newTimes[showTimePicker.idx] = t;
-                      setTimes(newTimes);
-                    }}
-                  >
-                    {[...Array(24).keys()].map(h => (
-                      <Picker.Item key={h} label={h.toString().padStart(2,'0')} value={h} color="#000" />
-                    ))}
-                  </Picker>
-                    </View>
-                    <Text style={{color:'#fff',fontSize:18,marginHorizontal:8,alignSelf:'flex-end'}}>:</Text>
-                    <View style={{alignItems:'center'}}>
-                      <Text style={{color:'#fff',fontSize:14,marginBottom:4}}>Minute</Text>
-                      <Picker
-                    selectedValue={times[showTimePicker.idx] ? times[showTimePicker.idx].getMinutes() : 0}
-                    style={{width:100,color:'#fff'}} itemStyle={{color:'#fff'}} dropdownIconColor="#fff"
-                    onValueChange={(minute: number) => {
-                      if (!times[showTimePicker.idx]) return;
-                      const t = new Date(times[showTimePicker.idx]);
-                      t.setMinutes(minute);
-                      const newTimes = [...times];
-                      newTimes[showTimePicker.idx] = t;
-                      setTimes(newTimes);
-                    }}
-                  >
-                    {[...Array(60).keys()].map(m => (
-                      <Picker.Item key={m} label={m.toString().padStart(2,'0')} value={m} color="#000" />
-                    ))}
-                  </Picker>
-                    </View>
-                </View>
-                <TouchableOpacity style={{marginTop:20,backgroundColor:'#4CAF50',padding:12,borderRadius:8,width:120,alignItems:'center'}} onPress={()=>setShowTimePicker({show:false,idx:0})}>
-                  <Text style={{color:'#fff',fontWeight:'bold',fontSize:16}}>Done</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Modal>
-
         </View>
       </View>
     </ReactNativeModal>
   );
 };
 
-// --- MedicationScreen with FAB and Modal ---
+// Main MedicationScreen Component
 const MedicationScreen: React.FC = () => {
   const [medications, setMedications] = useState<Medication[]>([]);
+  const [isDebugMenuOpen, setIsDebugMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [detailModal, setDetailModal] = useState<{visible: boolean, medication: Medication | null}>({visible: false, medication: null});
   const navigation = useNavigation<any>();
+
+  useEffect(() => {
+    const initNotifications = async () => {
+      await configureNotifications();
+      const hasPermission = await requestNotificationPermission();
+      if (!hasPermission) {
+        Alert.alert(
+          'Notifications Disabled',
+          'Please enable notifications to receive medication reminders.',
+          [{ text: 'OK' }]
+        );
+      }
+      loadMedications();
+    };
+    
+    initNotifications();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
@@ -516,20 +494,141 @@ const MedicationScreen: React.FC = () => {
     }
   };
 
-  const [detailModal, setDetailModal] = useState<{visible: boolean, medication: Medication | null}>({visible: false, medication: null});
+  // **SIMPLE FIX: Updated handleAddMedication in MedicationScreen**
+const handleAddMedication = async (med: { 
+  name: string; 
+  form?: string; 
+  dosage: string; 
+  frequency: string; 
+  times: Date[]; 
+  duration?: string 
+}) => {
+  try {
+    console.log('🚀 Starting medication addition process...');
+    
+    const currentUser = JSON.parse(await AsyncStorage.getItem('currentUser') || '{}');
+    if (!currentUser?.id) {
+      throw new Error('User not logged in');
+    }
+    
+    const now = new Date();
+    console.log('🕐 Current time:', now.toLocaleString());
+    
+    // **KEY FIX: Process times and store as LOCAL time strings**
+    const processedTimes = med.times.map((time, index) => {
+      console.log(`📅 Processing time ${index + 1}:`);
+      console.log(`   Original: ${time.toLocaleString()}`);
+      console.log(`   ISO: ${time.toISOString()}`);
+      
+      // Create a proper local time
+      const localTime = new Date(time);
+      
+      // If the time has passed today, move to tomorrow
+      if (localTime <= now) {
+        localTime.setDate(localTime.getDate() + 1);
+        console.log(`⏭️ Moved to tomorrow: ${localTime.toLocaleString()}`);
+      }
+      
+      // **CRITICAL: Create a local time string without timezone info**
+      const localTimeString = `${localTime.getFullYear()}-${String(localTime.getMonth() + 1).padStart(2, '0')}-${String(localTime.getDate()).padStart(2, '0')} ${String(localTime.getHours()).padStart(2, '0')}:${String(localTime.getMinutes()).padStart(2, '0')}:${String(localTime.getSeconds()).padStart(2, '0')}`;
+      
+      console.log(`💾 Will store as: ${localTimeString}`);
+      
+      return {
+        dateObject: localTime,
+        localString: localTimeString
+      };
+    });
+    
+    // Store medications in database
+    for (let i = 0; i < processedTimes.length; i++) {
+      const { localString } = processedTimes[i];
+      
+      try {
+        // **Store as local time string, not ISO**
+        await executeQuery(
+          `INSERT INTO medications (
+            user_id, name, form, dosage, 
+            frequency, time, duration
+          ) VALUES (?, ?, ?, ?, ?, ?, ?);`,
+          [
+            currentUser.id, 
+            med.name, 
+            med.form || null, 
+            med.dosage, 
+            med.frequency, 
+            localString, // Store as local time string
+            med.duration || null
+          ]
+        );
+        
+        console.log(`✅ Saved medication: ${med.name} for ${localString}`);
+      } catch (error) {
+        console.error('Error saving medication to database:', error);
+        throw new Error('Failed to save medication to database');
+      }
+    }
+    
+    // Schedule notifications
+    try {
+      const insertedMeds = await executeQuery(
+        'SELECT id, name, dosage, time FROM medications WHERE user_id = ? AND name = ? ORDER BY id DESC LIMIT ?',
+        [currentUser.id, med.name, processedTimes.length]
+      ) as Array<MedicationNotification>;
 
-  const handleDeleteMedication = async (med: Medication) => {
+      console.log(`📋 Retrieved ${insertedMeds.length} medications for notification scheduling`);
+
+      for (let i = 0; i < insertedMeds.length; i++) {
+        const medication = insertedMeds[i];
+        
+        if (medication) {
+          try {
+            console.log(`🔔 Scheduling notification for: ${medication.name} at ${medication.time}`);
+            
+            await scheduleMedicationNotification({
+              ...medication,
+              user_id: currentUser.id
+            });
+            
+            console.log(`✅ Notification scheduled for ${medication.name}`);
+          } catch (error) {
+            console.error('Failed to schedule notification:', {
+              medicationId: medication.id,
+              medicationName: medication.name,
+              error
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error scheduling notifications:', error);
+    }
+    
+    console.log('🎉 Medication addition process completed!');
+    await loadMedications();
+    
+  } catch (error) {
+    console.error('❌ Error in handleAddMedication:', error);
+    Alert.alert('Error', 'Failed to add medication. Please try again.');
+  }
+};
+
+  const handleDeleteMedication = async (medication: Medication) => {
     try {
       const currentUser = JSON.parse(await AsyncStorage.getItem('currentUser') || '{}');
-      // Use time as unique identifier for deletion
-      if (!med.time) {
+      
+      if (!medication.time) {
         Alert.alert('Error', 'Medication time not found. Cannot delete this medication.');
         return;
       }
       
+      if (medication.notification_id) {
+        await cancelScheduledNotification(medication.notification_id);
+      }
+      
       await executeQuery(
         'DELETE FROM medications WHERE user_id = ? AND name = ? AND time = ?;',
-        [currentUser.id, med.name, med.time]
+        [currentUser.id, medication.name, medication.time]
       );
       loadMedications();
     } catch (error) {
@@ -538,56 +637,141 @@ const MedicationScreen: React.FC = () => {
     }
   };
 
-  const handleAddMedication = async (med: { 
-    name: string; 
-    form?: string; 
-    dosage: string; 
-    frequency: string; 
-    times: Date[]; 
-    duration?: string 
-  }) => {
+  // Debug functions
+  const handleTestNotification = async () => {
     try {
-      // 1. Get current user
-      const currentUser = JSON.parse(await AsyncStorage.getItem('currentUser') || '{}');
-      if (!currentUser?.id) {
-        const error = new Error('User not logged in');
-        console.error('Authentication error:', error);
-        throw error;
-      }
-      
-      // 2. Insert each time as a separate medication entry
-      for (const time of med.times) {
-        try {
-          // 3. Insert into database
-          const result = await executeQuery(
-            `INSERT INTO medications (
-              user_id, name, form, dosage, 
-              frequency, time, duration
-            ) VALUES (?, ?, ?, ?, ?, ?, ?);`,
-            [
-              currentUser.id, 
-              med.name, 
-              med.form || null, 
-              med.dosage, 
-              med.frequency, 
-              time.toISOString(), 
-              med.duration || null
-            ]
-          );
-        } catch (error) {
-          console.error('Error in handleAddMedication:', error);
-        }
-      }
-      
-      console.log('=== MEDICATION ADDITION COMPLETE ===');
-      
-      // 5. Reload medications to show the new entries
-      await loadMedications();
-      
+      const notificationId = await debugNotificationService.sendTest(5);
+      Alert.alert(
+        'Test Notification', 
+        `Test notification scheduled! ID: ${notificationId}`
+      );
+      console.log('Test notification ID:', notificationId);
     } catch (error) {
-      console.error('❌ Error in handleAddMedication:', error);
-      Alert.alert('Error', 'Failed to add medication. Please check the logs for details.');
+      console.error('Test notification failed:', error);
+      Alert.alert('Error', 'Failed to schedule test notification');
     }
+  };
+
+  const handleListNotifications = async () => {
+    try {
+      const scheduled = await debugNotificationService.listScheduled();
+      Alert.alert(
+        'Scheduled Notifications', 
+        `Found ${scheduled.length} scheduled notifications. Check console for details.`
+      );
+    } catch (error) {
+      console.error('Failed to list notifications:', error);
+      Alert.alert('Error', 'Failed to list scheduled notifications');
+    }
+  };
+  // 1. Add the debug function near your other debug functions
+const debugActualScheduling = async () => {
+  try {
+    console.log('=== 🔍 DEBUG NOTIFICATION SCHEDULING ===');
+    
+    // Get all scheduled notifications
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    const now = new Date();
+    
+    console.log(`🕐 Current time: ${now.toLocaleString()}`);
+    console.log(`📋 Total scheduled notifications: ${scheduled.length}`);
+    
+    if (scheduled.length === 0) {
+      console.log('❌ No notifications are scheduled!');
+      return;
+    }
+    
+    scheduled.forEach((notification, index) => {
+      console.log(`\n--- Notification ${index + 1} ---`);
+      console.log(`ID: ${notification.identifier}`);
+      console.log(`Title: ${notification.content.title}`);
+      console.log(`Body: ${notification.content.body}`);
+      console.log(`Data:`, notification.content.data);
+      
+      // Check the trigger
+      if (notification.trigger) {
+        console.log(`Trigger type:`, typeof notification.trigger);
+        console.log(`Trigger object:`, notification.trigger);
+        
+        if ('date' in notification.trigger && notification.trigger.date) {
+          const triggerDate = new Date(notification.trigger.date as number);
+          const timeUntil = triggerDate.getTime() - now.getTime();
+          const minutesUntil = Math.round(timeUntil / (1000 * 60));
+          const secondsUntil = Math.round(timeUntil / 1000);
+          
+          console.log(`📅 Scheduled for: ${triggerDate.toLocaleString()}`);
+          console.log(`⏱️  Time until fire: ${minutesUntil} minutes (${secondsUntil} seconds)`);
+          
+          if (timeUntil <= 0) {
+            console.log(`🚨 WARNING: This notification should have fired already!`);
+          } else if (timeUntil < 60000) {
+            console.log(`⚠️  WARNING: This notification will fire very soon!`);
+          }
+        } else if ('seconds' in notification.trigger) {
+          console.log(`🔢 Seconds-based trigger: ${notification.trigger.seconds} seconds`);
+        } else {
+          console.log(`❓ Unknown trigger format`);
+        }
+      } else {
+        console.log(`❌ No trigger found!`);
+      }
+    });
+    
+    console.log('\n=== END DEBUG ===');
+    
+    // Also check permissions
+    const permissions = await Notifications.getPermissionsAsync();
+    console.log('📱 Notification permissions:', permissions);
+    
+  } catch (error) {
+    console.error('❌ Error debugging notifications:', error);
+  }
+};
+
+  const formatTime = (timeString: string) => {
+    try {
+      const date = new Date(timeString);
+      return date.toLocaleTimeString('en-US', { 
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true 
+      });
+    } catch (e) {
+      return timeString;
+    }
+  };
+
+  const renderMedicationItem = ({ item }: { item: Medication }) => {
+    return (
+      <TouchableOpacity
+        style={styles.medicationCard}
+        activeOpacity={0.85}
+        onPress={() => setDetailModal({visible: true, medication: item})}
+      >
+        <View style={styles.medicationInfo}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={styles.medicationName}>{item.name}</Text>
+            <Text style={[styles.medicationDetails, { color: '#4CAF50' }]}>
+              {formatTime(item.time)}
+            </Text>
+          </View>
+          {item.form && (
+            <Text style={styles.medicationDetails}>
+              {item.form} • {item.dosage}
+            </Text>
+          )}
+          <Text style={styles.medicationDetails}>{item.frequency}</Text>
+        </View>
+        <View style={styles.medicationActions}>
+          <TouchableOpacity
+            onPress={() => handleDeleteMedication(item)}
+            style={styles.actionButton}
+          >
+            <Ionicons name="trash" size={20} color="#F44336" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
   };
 
   // Medication Detail Modal
@@ -633,54 +817,6 @@ const MedicationScreen: React.FC = () => {
     );
   };
 
-
-
-  const formatTime = (timeString: string) => {
-    try {
-      const date = new Date(timeString);
-      return date.toLocaleTimeString('en-US', { 
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true 
-      });
-    } catch (e) {
-      return timeString; // Return as is if parsing fails
-    }
-  };
-
-  const renderMedicationItem = ({ item }: { item: Medication }) => {
-    return (
-      <TouchableOpacity
-        style={styles.medicationCard}
-        activeOpacity={0.85}
-        onPress={() => setDetailModal({visible: true, medication: item})}
-      >
-        <View style={styles.medicationInfo}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={styles.medicationName}>{item.name}</Text>
-            <Text style={[styles.medicationDetails, { color: '#4CAF50' }]}>
-              {formatTime(item.time)}
-            </Text>
-          </View>
-          {item.form && (
-            <Text style={styles.medicationDetails}>
-              {item.form} • {item.dosage}
-            </Text>
-          )}
-          <Text style={styles.medicationDetails}>{item.frequency}</Text>
-        </View>
-        <View style={styles.medicationActions}>
-          <TouchableOpacity
-            onPress={() => handleDeleteMedication(item)}
-            style={styles.actionButton}
-          >
-            <Ionicons name="trash" size={20} color="#F44336" />
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -700,8 +836,62 @@ const MedicationScreen: React.FC = () => {
           <View style={[styles.container, {paddingTop: 24}]}>
             <View style={styles.header}>
               <Text style={styles.title}>My Medications</Text>
- 
+              <View style={{flexDirection: 'row'}}>
+                <TouchableOpacity 
+                  onPress={() => setIsDebugMenuOpen(!isDebugMenuOpen)}
+                  style={styles.debugButton}
+                >
+                  <Ionicons name="bug" size={20} color="white" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={() => setShowAddModal(true)}
+                >
+                  <Ionicons name="add" size={24} color="white" />
+                </TouchableOpacity>
+              </View>
             </View>
+
+            {isDebugMenuOpen && (
+  <View style={styles.debugMenu}>
+    <Text style={styles.debugTitle}>Debug Menu</Text>
+    
+    <TouchableOpacity 
+      style={styles.debugButton}
+      onPress={handleTestNotification}
+    >
+      <Text style={styles.debugButtonText}>Test Notification (5s)</Text>
+    </TouchableOpacity>
+    
+    <TouchableOpacity 
+      style={styles.debugButton}
+      onPress={handleListNotifications}
+    >
+      <Text style={styles.debugButtonText}>List Notifications</Text>
+    </TouchableOpacity>
+    
+    <TouchableOpacity 
+      style={styles.debugButton}
+      onPress={debugActualScheduling}
+    >
+      <Text style={styles.debugButtonText}>Debug Actual Scheduling</Text>
+    </TouchableOpacity>
+    
+    <TouchableOpacity 
+      style={[styles.debugButton, {backgroundColor: '#dc2626'}]}
+      onPress={async () => {
+        await Notifications.cancelAllScheduledNotificationsAsync();
+        Alert.alert('Debug', 'All notifications cleared');
+      }}
+    >
+      <Text style={styles.debugButtonText}>Clear All</Text>
+    </TouchableOpacity>
+  </View>
+)}
+            
+
+            
+            
 
             {medications.length === 0 ? (
               <View style={styles.emptyState}>
@@ -760,13 +950,156 @@ const MedicationScreen: React.FC = () => {
             visible={showAddModal}
             onClose={() => setShowAddModal(false)}
             onDone={handleAddMedication}
-            coverScreen={true}
-            propagateSwipe={true}
           />
         </SafeAreaView>
       </LinearGradient>
     </>
   );
 };
+
+// Styles
+const styles = StyleSheet.create({
+  gradient: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+    padding: 16,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 10,
+  },
+  testButton: {
+    backgroundColor: '#4CAF50',
+    padding: 8,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  testButtonText: {
+    color: 'white',
+    fontSize: 12,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  addButton: {
+    backgroundColor: '#FF6B6B',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    marginLeft: 10,
+  },
+  debugButton: {
+    backgroundColor: '#6B7280',
+    padding: 8,
+    borderRadius: 8,
+    marginVertical: 4,
+    alignItems: 'center',
+  },
+  debugButtonText: {
+    color: 'white',
+    fontWeight: '500',
+  },
+  debugMenu: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 12,
+    margin: 10,
+    elevation: 5,
+    position: 'absolute',
+    top: 70,
+    right: 10,
+    zIndex: 1000,
+    width: 200,
+  },
+  debugTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#374151',
+    textAlign: 'center',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyText: {
+    color: '#888888',
+    fontSize: 16,
+    marginVertical: 16,
+  },
+  addFirstButton: {
+    backgroundColor: '#F44336',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  addFirstButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  listContainer: {
+    paddingBottom: 100,
+    paddingTop: 8,
+  },
+  listContent: {
+    flexGrow: 1,
+  },
+  medicationCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  medicationInfo: {
+    flex: 1,
+  },
+  medicationName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  medicationDetails: {
+    color: '#888888',
+    fontSize: 14,
+  },
+  medicationNotes: {
+    color: '#BBBBBB',
+    fontSize: 13,
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  medicationActions: {
+    flexDirection: 'row',
+    marginLeft: 12,
+  },
+  actionButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000000',
+  },
+});
+
 
 export default MedicationScreen;

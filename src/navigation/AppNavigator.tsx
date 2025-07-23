@@ -34,20 +34,38 @@ const AppNavigator = () => {
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Splash');
 
   useEffect(() => {
-    const checkFirstLaunch = async () => {
+    const checkAppState = async () => {
       try {
-        // Reset the first launch condition for testing
-        await AsyncStorage.removeItem('hasLaunched');
-        setInitialRoute('Onboarding');
+        // Check if it's the first time launching the app
+        const hasLaunched = await AsyncStorage.getItem('hasLaunched');
+        
+        if (hasLaunched === null) {
+          // First time launching - show onboarding
+          setInitialRoute('Onboarding');
+          await AsyncStorage.setItem('hasLaunched', 'true');
+        } else {
+          // App has been launched before - check if user is logged in
+          const currentUser = await AsyncStorage.getItem('currentUser');
+          
+          if (currentUser) {
+            // User is logged in - go to main app
+            setInitialRoute('MainApp');
+          } else {
+            // User is not logged in - go to login
+            setInitialRoute('Login');
+          }
+        }
+        
         setIsLoading(false);
       } catch (error) {
-        console.error('Error resetting first launch condition:', error);
+        console.error('Error checking app state:', error);
+        // Default to onboarding if there's an error
         setInitialRoute('Onboarding');
         setIsLoading(false);
       }
     };
 
-    checkFirstLaunch();
+    checkAppState();
   }, []);
 
   if (isLoading) {
@@ -62,17 +80,36 @@ const AppNavigator = () => {
         }}
         initialRouteName={initialRoute}
       >
-        <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen 
-          name="Onboarding" 
-          component={OnboardingScreen}
+          name="Splash" 
+          component={SplashScreen} 
           options={{
             gestureEnabled: false,
             animation: 'none',
           }}
         />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Register" component={RegisterScreen} />
+        <Stack.Screen 
+          name="Onboarding" 
+          component={OnboardingScreen}
+          options={{
+            gestureEnabled: false,
+            animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen 
+          name="Login" 
+          component={LoginScreen}
+          options={{
+            animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen 
+          name="Register" 
+          component={RegisterScreen}
+          options={{
+            animation: 'slide_from_right',
+          }}
+        />
         <Stack.Screen 
           name="TermsAndConditions" 
           component={TermsAndConditionsScreen}
@@ -86,6 +123,7 @@ const AppNavigator = () => {
             headerTitleStyle: {
               fontWeight: 'bold',
             },
+            animation: 'slide_from_right',
           }}
         />
         <Stack.Screen 
@@ -101,23 +139,40 @@ const AppNavigator = () => {
             headerTitleStyle: {
               fontWeight: 'bold',
             },
+            animation: 'slide_from_right',
           }}
         />
         <Stack.Screen 
           name="VerifyHash" 
-          component={VerifyHashScreen as React.ComponentType<any>}
+          component={VerifyHashScreen}
           options={{
             headerShown: false,
             gestureEnabled: false,
+            animation: 'slide_from_right',
           }}
         />
-        <Stack.Screen name="MainApp" component={TabNavigator} />
+        <Stack.Screen 
+          name="MainApp" 
+          component={TabNavigator}
+          options={{
+            gestureEnabled: false,
+            animation: 'fade',
+          }}
+        />
         <Stack.Screen 
           name="PersonalInformation" 
           component={PersonalInformationScreen}
           options={{
             headerShown: true,
             title: 'Personal Information',
+            headerStyle: {
+              backgroundColor: '#4A90E2',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            animation: 'slide_from_right',
           }}
         />
         <Stack.Screen 
@@ -126,6 +181,14 @@ const AppNavigator = () => {
           options={{
             headerShown: true,
             title: 'Emergency Contacts',
+            headerStyle: {
+              backgroundColor: '#4A90E2',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            animation: 'slide_from_right',
           }}
         />
         <Stack.Screen 
@@ -141,6 +204,7 @@ const AppNavigator = () => {
             headerTitleStyle: {
               fontWeight: 'bold',
             },
+            animation: 'slide_from_right',
           }}
         />
         <Stack.Screen 
@@ -156,6 +220,7 @@ const AppNavigator = () => {
             headerTitleStyle: {
               fontWeight: 'bold',
             },
+            animation: 'slide_from_right',
           }}
         />
       </Stack.Navigator>

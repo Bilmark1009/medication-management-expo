@@ -1,7 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
-import { View, TouchableOpacity, StyleSheet, Platform, Dimensions } from 'react-native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 // Import all screens
@@ -13,9 +13,7 @@ import PersonalInformationScreen from '../screens/PersonalInformationScreen';
 import EmergencyContactsScreen from '../screens/EmergencyContactsScreen';
 
 const Tab = createBottomTabNavigator();
-const ProfileStack = createStackNavigator();
-const AddStack = createStackNavigator();
-const { height } = Dimensions.get('window');
+const ProfileStack = createNativeStackNavigator();
 
 // Profile Stack Navigator
 function ProfileStackNavigator() {
@@ -25,14 +23,43 @@ function ProfileStackNavigator() {
         headerShown: false,
       }}
     >
-      <ProfileStack.Screen name="ProfileMain" component={ProfileScreen} />
-      <ProfileStack.Screen name="PersonalInformation" component={PersonalInformationScreen} />
-      <ProfileStack.Screen name="EmergencyContacts" component={EmergencyContactsScreen} />
+      <ProfileStack.Screen 
+        name="ProfileMain" 
+        component={ProfileScreen} 
+      />
+      <ProfileStack.Screen 
+        name="PersonalInformation" 
+        component={PersonalInformationScreen}
+        options={{
+          headerShown: true,
+          title: 'Personal Information',
+          headerStyle: {
+            backgroundColor: '#4A90E2',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      />
+      <ProfileStack.Screen 
+        name="EmergencyContacts" 
+        component={EmergencyContactsScreen}
+        options={{
+          headerShown: true,
+          title: 'Emergency Contacts',
+          headerStyle: {
+            backgroundColor: '#4A90E2',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      />
     </ProfileStack.Navigator>
   );
 }
-
-// Add Stack Navigator (no AddMedicationModal, cleaned up)
 
 export default function TabNavigator() {
   return (
@@ -44,6 +71,7 @@ export default function TabNavigator() {
         tabBarInactiveTintColor: '#8E8E93', // Default gray for inactive icons
         headerShown: false,
         tabBarItemStyle: styles.tabBarItem,
+        tabBarLabelStyle: styles.tabBarLabel,
       }}
     >
       <Tab.Screen
@@ -53,6 +81,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
+          title: 'Home',
         }}
       />
       <Tab.Screen
@@ -72,6 +101,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="time" size={size} color={color} />
           ),
+          title: 'History',
         }}
       />
       <Tab.Screen
@@ -81,6 +111,7 @@ export default function TabNavigator() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
           ),
+          title: 'Profile',
         }}
       />
     </Tab.Navigator>
@@ -90,24 +121,32 @@ export default function TabNavigator() {
 const styles = StyleSheet.create({
   tabBar: {
     position: 'absolute',
-    bottom: 0, // Set to 0 to ensure it is completely at the bottom
+    bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#000000', // Black background
+    backgroundColor: '#000000',
     borderTopLeftRadius: 15,
     borderTopRightRadius: 15,
-    height: 65,
-    shadowColor: '#FF0000', // Red shadow color
+    height: Platform.OS === 'ios' ? 85 : 65, // Account for iPhone home indicator
+    paddingBottom: Platform.OS === 'ios' ? 20 : 5, // Extra padding for iOS
+    shadowColor: '#FF0000',
     shadowOffset: {
       width: 0,
-      height: -2, // Adjusted shadow offset for top shadow
+      height: -2,
     },
     shadowOpacity: 0.25,
     shadowRadius: 3.5,
     elevation: 5,
+    borderTopWidth: 0, // Remove default border
   },
   tabBarItem: {
     height: 50,
-    paddingBottom: 5,
+    paddingTop: 5,
+    paddingBottom: Platform.OS === 'ios' ? 0 : 5,
+  },
+  tabBarLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
   },
 });
