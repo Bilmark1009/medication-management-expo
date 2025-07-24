@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Tumana Pro",
-    "slug": "tumana-pro",
+    "name": "Tumana",
+    "slug": "tumana",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/app_icon.png",

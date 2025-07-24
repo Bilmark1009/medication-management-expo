@@ -26,7 +26,7 @@ interface PersonalInfo {
 const dbPromise = SQLite.openDatabaseAsync('pillpal.db');
 
 // Initialize the database
-// **FIXED DATABASE INITIALIZATION** - Replace your initializeDatabase function
+// **UPDATED DATABASE INITIALIZATION** - Now includes background task support
 export const initializeDatabase = async () => {
   try {
     const db = await dbPromise;
@@ -43,7 +43,7 @@ export const initializeDatabase = async () => {
       );
     `);
 
-    // **FIXED: Single medication table definition with ALL columns**
+    // **UPDATED: Medication table with background task support columns**
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS medications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,6 +58,10 @@ export const initializeDatabase = async () => {
         notification_id TEXT,
         notification_enabled BOOLEAN DEFAULT 1,
         timezone_offset INTEGER,
+        daily_status TEXT DEFAULT 'pending',
+        last_reset_date TEXT DEFAULT '',
+        last_taken_date TEXT DEFAULT '',
+        daily_notes TEXT DEFAULT '',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
       );
@@ -98,7 +102,7 @@ export const initializeDatabase = async () => {
       throw error;
     }
 
-    // **FIXED: Check and add missing columns to medications table**
+    // **UPDATED: Check and add missing columns to medications table for background task support**
     const columns = await db.getAllAsync(`PRAGMA table_info(medications);`);
     console.log('Current medication table columns:', columns.map((col: any) => col.name));
     
@@ -109,6 +113,10 @@ export const initializeDatabase = async () => {
       { name: 'duration', type: 'TEXT', defaultValue: null },
       { name: 'form', type: 'TEXT', defaultValue: null },
       { name: 'timezone_offset', type: 'INTEGER', defaultValue: null },
+      { name: 'daily_status', type: 'TEXT', defaultValue: "'pending'" },
+      { name: 'last_reset_date', type: 'TEXT', defaultValue: "''" },
+      { name: 'last_taken_date', type: 'TEXT', defaultValue: "''" },
+      { name: 'daily_notes', type: 'TEXT', defaultValue: "''" },
       { name: 'created_at', type: 'DATETIME', defaultValue: 'CURRENT_TIMESTAMP' }
     ];
 
@@ -129,8 +137,6 @@ export const initializeDatabase = async () => {
       }
     }
 
-    // **REMOVED: The duplicate medication table creation that was overwriting the first one**
-    
     // Create emergency_contacts table
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS emergency_contacts (
@@ -162,7 +168,7 @@ export const initializeDatabase = async () => {
       );
     `);
     
-    console.log('✅ Database initialized successfully with fixed schema');
+    console.log('✅ Database initialized successfully with background task support');
   } catch (error) {
     console.error('❌ Error initializing database:', error);
     throw error;

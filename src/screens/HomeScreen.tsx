@@ -6,6 +6,12 @@ import moment from 'moment';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { executeQuery } from '../utils/database';
+import { 
+  checkMissedDosesToday, 
+  calculateSimpleAdherence,
+  markMedicationTaken,
+  markMedicationSkipped 
+} from '../services/backgroundTasks';
 
 type Medication = {
   id: string;
@@ -13,7 +19,8 @@ type Medication = {
   dosage: string;
   frequency: string;
   time: string;
-
+  daily_status?: string;
+  minutesLate?: number;
 };
 
 type HomeScreenProps = {
@@ -30,37 +37,100 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [upcomingMedications, setUpcomingMedications] = useState<Medication[]>([]);
   const [takenMedications, setTakenMedications] = useState<Set<string>>(new Set());
   const [skippedMedications, setSkippedMedications] = useState<Set<string>>(new Set());
+  
+  // **NEW: States for background task integration**
+  const [missedDoses, setMissedDoses] = useState<Medication[]>([]);
+  const [adherenceData, setAdherenceData] = useState({ adherence: 0, total: 0, taken: 0, missed: 0 });
 
-  const handleTakeMedicine = (medicationId: string) => {
-    // Add to taken set and remove from skipped if it was there
-    setTakenMedications(prev => new Set(prev).add(medicationId));
-    setSkippedMedications(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(medicationId);
-      return newSet;
-    });
+  // **NEW: Check missed doses when screen focuses**
+  useEffect(() => {
+    const checkMissedDoses = async () => {
+      try {
+        const missed = await checkMissedDosesToday();
+        setMissedDoses(missed);
+        
+        const adherence = await calculateSimpleAdherence(7); // Last 7 days
+        setAdherenceData(adherence);
+        setAdherencePercentage(adherence.adherence);
+        
+        console.log(`📊 Missed doses: ${missed.length}, Adherence: ${adherence.adherence}%`);
+      } catch (error) {
+        console.error('❌ Error checking missed doses:', error);
+      }
+    };
+
+    // Check on focus
+    const unsubscribe = navigation.addListener('focus', checkMissedDoses);
     
-    // Here you would typically update the database
-    // For example: markMedicationAsTaken(medicationId);
-    
-    Alert.alert('Medicine Taken', `You have marked the medication as taken.`);
+    // Check on initial load
+    if (currentUser?.id) {
+      checkMissedDoses();
+    }
+
+    return unsubscribe;
+  }, [navigation, currentUser]);
+
+  // **UPDATED: Handle take medicine with background task integration**
+  const handleTakeMedicine = async (medicationId: string) => {
+    try {
+      const success = await markMedicationTaken(parseInt(medicationId));
+      if (success) {
+        // Update local state
+        setTakenMedications(prev => new Set(prev).add(medicationId));
+        setSkippedMedications(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(medicationId);
+          return newSet;
+        });
+        
+        Alert.alert('Medicine Taken', 'Medication marked as taken.');
+        
+        // Refresh missed doses and adherence data
+        const missed = await checkMissedDosesToday();
+        setMissedDoses(missed);
+        
+        const adherence = await calculateSimpleAdherence(7);
+        setAdherenceData(adherence);
+        setAdherencePercentage(adherence.adherence);
+      } else {
+        Alert.alert('Error', 'Failed to mark medication as taken.');
+      }
+    } catch (error) {
+      console.error('❌ Error taking medicine:', error);
+      Alert.alert('Error', 'Failed to mark medication as taken.');
+    }
   };
 
-  const handleSkipMedicine = (medicationId: string) => {
-    // Add to skipped set and remove from taken if it was there
-    setSkippedMedications(prev => new Set(prev).add(medicationId));
-    setTakenMedications(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(medicationId);
-      return newSet;
-    });
-    
-    // Here you would typically update the database
-    // For example: markMedicationAsSkipped(medicationId);
-    
-    Alert.alert('Medicine Skipped', `You have chosen to skip this dose.`);
+  // **UPDATED: Handle skip medicine with background task integration**
+  const handleSkipMedicine = async (medicationId: string) => {
+    try {
+      const success = await markMedicationSkipped(parseInt(medicationId), 'User skipped');
+      if (success) {
+        // Update local state
+        setSkippedMedications(prev => new Set(prev).add(medicationId));
+        setTakenMedications(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(medicationId);
+          return newSet;
+        });
+        
+        Alert.alert('Medicine Skipped', 'Medication marked as skipped.');
+        
+        // Refresh missed doses and adherence data
+        const missed = await checkMissedDosesToday();
+        setMissedDoses(missed);
+        
+        const adherence = await calculateSimpleAdherence(7);
+        setAdherenceData(adherence);
+        setAdherencePercentage(adherence.adherence);
+      } else {
+        Alert.alert('Error', 'Failed to mark medication as skipped.');
+      }
+    } catch (error) {
+      console.error('❌ Error skipping medicine:', error);
+      Alert.alert('Error', 'Failed to mark medication as skipped.');
+    }
   };
-
 
   // Load medications whenever currentUser changes
   useEffect(() => {
@@ -152,7 +222,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             name: med.name,
             time: med.time,
             frequency: med.frequency,
-            dosage: med.dosage
+            dosage: med.dosage,
+            daily_status: med.daily_status
           });
         });
       }
@@ -164,9 +235,54 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     }
   };
 
+  // **NEW: Render missed doses card**
+  const renderMissedDoses = () => {
+    if (missedDoses.length === 0) return null;
 
-
-
+    return (
+      <View style={styles.missedDosesCard}>
+        <View style={styles.missedDosesHeader}>
+          <Ionicons name="warning" size={24} color="#FF6B6B" />
+          <Text style={styles.missedDosesTitle}>Missed Medications</Text>
+        </View>
+        <Text style={styles.missedDosesSubtitle}>
+          You have {missedDoses.length} medication{missedDoses.length > 1 ? 's' : ''} that you missed today
+        </Text>
+        {missedDoses.map((med) => (
+          <View key={med.id} style={styles.missedDoseItem}>
+            <View style={styles.missedDoseInfo}>
+              <Text style={styles.missedDoseName}>{med.name}</Text>
+              <Text style={styles.missedDoseTime}>
+                Due: {new Date(`${new Date().toISOString().split('T')[0]}T${med.time}`).toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true
+                })}
+                {med.minutesLate && ` (${med.minutesLate} min late)`}
+              </Text>
+              <Text style={styles.missedDoseDosage}>{med.dosage}</Text>
+            </View>
+            <View style={styles.missedDoseActions}>
+              <TouchableOpacity 
+                style={styles.takeNowButton}
+                onPress={() => handleTakeMedicine(med.id.toString())}
+              >
+                <Ionicons name="checkmark" size={16} color="#fff" />
+                <Text style={styles.takeNowText}>Take Now</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.skipButton}
+                onPress={() => handleSkipMedicine(med.id.toString())}
+              >
+                <Ionicons name="close" size={16} color="#fff" />
+                <Text style={styles.skipText}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  };
 
   const renderItem = ({ item }: { item: any }) => {
     if (item.key === 'header') {
@@ -199,10 +315,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       }).start(() => {
         if (type === 'take') {
           handleTakeMedicine(item.id);
-          Alert.alert('Medication marked as taken!');
         } else {
           handleSkipMedicine(item.id);
-          Alert.alert('Medication marked as skipped!');
         }
       });
     };
@@ -249,7 +363,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           medDate > now &&
           medDate.getTime() - now.getTime() < 12 * 60 * 60 * 1000 &&
           !takenMedications.has(med.id) &&
-          !skippedMedications.has(med.id)
+          !skippedMedications.has(med.id) &&
+          med.daily_status !== 'taken' &&
+          med.daily_status !== 'skipped'
         );
       })
       .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
@@ -295,61 +411,28 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     );
   };
 
-  // Calculate today's medication statistics
-  // Calculate today's medication statistics
+  // **UPDATED: Calculate today's medication statistics using background task data**
   const calculateMedicationStats = () => {
     const now = new Date();
     const today = now.toISOString().split('T')[0];
 
-    // Helper to robustly get the date and time from med.time (supports ISO string or 'HH:mm')
-    const getDateString = (timeStr: string) => {
-      // If timeStr is ISO (2025-05-30T07:00:00.000Z), return date part
-      if (timeStr.includes('T')) {
-        return timeStr.split('T')[0];
-      }
-      // Else, fallback to today (used if only 'HH:mm' is stored)
-      return today;
-    };
-    const getHourMinute = (timeStr: string) => {
-      if (timeStr.includes('T')) {
-        const d = new Date(timeStr);
-        return [d.getHours(), d.getMinutes()];
-      }
-      // Assume 'HH:mm' format
-      const [h, m] = timeStr.split(':').map(Number);
-      return [h || 0, m || 0];
-    };
+    // Use adherence data from background task
+    const total = adherenceData.total || 0;
+    const taken = adherenceData.taken || 0;
+    const missed = adherenceData.missed || 0;
+    const remaining = Math.max(0, total - taken - missed);
 
-    // Filter all doses scheduled for today (not just unique meds)
-    const todayMedications = upcomingMedications.filter(med => {
-      return getDateString(med.time) === today;
-    });
-
-    // Each dose (row) is counted, not just unique med names
-    const takenCount = todayMedications.filter(med => takenMedications.has(med.id)).length;
-    const skippedCount = todayMedications.filter(med => skippedMedications.has(med.id)).length;
-    const remainingCount = todayMedications.length - takenCount - skippedCount;
-
-    // Calculate adherence for doses that are in the past (time <= now)
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-    const pastMedications = todayMedications.filter(med => {
-      const [hours, minutes] = getHourMinute(med.time);
-      return hours < currentHour || (hours === currentHour && minutes <= currentMinute);
-    });
-    const totalPastMeds = pastMedications.length;
-    const takenPastMeds = pastMedications.filter(med => takenMedications.has(med.id)).length;
-    const adherence = totalPastMeds > 0 ? Math.round((takenPastMeds / totalPastMeds) * 100) : 100;
+    // Calculate adherence for today
+    const adherence = adherenceData.adherence || 0;
 
     return {
-      total: todayMedications.length,
-      taken: takenCount,
-      skipped: skippedCount,
-      remaining: remainingCount,
-      adherence: adherence
+      total,
+      taken,
+      skipped: missed, // In simplified version, missed includes skipped
+      remaining,
+      adherence
     };
   };
-
 
   const renderDailyOverview = () => {
     const stats = calculateMedicationStats();
@@ -372,7 +455,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           <View style={styles.metricsRowCompact}>
             {[
               {icon: 'checkmark-circle', color: '#10B981', bg: 'rgba(16,185,129,0.10)', value: stats.taken, label: 'Taken'},
-              {icon: 'close-circle', color: '#EF4444', bg: 'rgba(239,68,68,0.10)', value: stats.skipped, label: 'Skipped'},
+              {icon: 'close-circle', color: '#EF4444', bg: 'rgba(239,68,68,0.10)', value: stats.skipped, label: 'Missed'},
               {icon: 'time-outline', color: '#9CA3AF', bg: 'rgba(156,163,175,0.10)', value: stats.remaining, label: 'Remaining'},
               {icon: 'calendar', color: '#8B5CF6', bg: 'rgba(139,92,246,0.10)', value: stats.total, label: 'Total Today'}
             ].map((item, idx) => (
@@ -390,7 +473,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           {/* Compact progress section visually integrated */}
           <View style={styles.progressSectionCompact}>
             <View style={styles.progressHeaderCompact}>
-              <Text style={styles.progressTitleCompact}>Today's Adherence</Text>
+              <Text style={styles.progressTitleCompact}>Weekly Adherence</Text>
               <Text style={[styles.progressPercentageCompact, { color: adherenceColor }]}>{stats.adherence}%</Text>
             </View>
             <View style={styles.progressBarContainerCompact}>
@@ -424,6 +507,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           contentContainerStyle={styles.contentContainer}
           ListHeaderComponent={
             <>
+              {renderMissedDoses()}
               {renderDailyOverview()}
               {renderUpcomingMedications()}
             </>
@@ -435,6 +519,98 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  // **NEW: Missed doses card styles**
+  missedDosesCard: {
+    backgroundColor: '#2A1A1A',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF6B6B',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  missedDosesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  missedDosesTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FF6B6B',
+    marginLeft: 8,
+  },
+  missedDosesSubtitle: {
+    fontSize: 14,
+    color: '#CCCCCC',
+    marginBottom: 12,
+  },
+  missedDoseItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+  },
+  missedDoseInfo: {
+    flex: 1,
+  },
+  missedDoseName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  missedDoseTime: {
+    fontSize: 12,
+    color: '#FF6B6B',
+    marginBottom: 2,
+  },
+  missedDoseDosage: {
+    fontSize: 12,
+    color: '#AAAAAA',
+  },
+  missedDoseActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+  takeNowButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B981',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  takeNowText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  skipButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EF4444',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  skipText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+
   // Upcoming Medications card
   upcomingCard: {
     backgroundColor: '#fff',
@@ -527,7 +703,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginVertical: 12,
   },
-  // ... rest of the styles below (keep all previous styles)
 
   // Compact metrics row
   metricsRowCompact: {
@@ -674,293 +849,16 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     fontFamily: 'System',
   },
-  dashboardDate: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    fontFamily: 'System',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  statCard: {
-    width: '48%',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginVertical: 8,
-    fontFamily: 'System',
-  },
-  statLabel: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    fontFamily: 'System',
-  },
-  // Progress Section
-  progressContainer: {
-    backgroundColor: '#252525',
-    borderRadius: 12,
-    padding: 16,
-  },
-
-  // Card Container
-  cardContainer: {
-    marginBottom: 16,
-    borderRadius: 12,
-    backgroundColor: '#1A1A1A',
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#8B0000', // Red border for emphasis
-  },
-  cardHeader: {
-    marginBottom: 8,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#C5A14E', // Dark gold for major text
-  },
-  cardContentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  cardContentText: {
-    fontSize: 16,
-    color: '#FFFFFF', // White for minor text
-  },
-  cardFooterText: {
-    fontSize: 14,
-    color: '#FFFFFF', // White for minor text
-  },
-  medicationCard: {
-    backgroundColor: '#333333',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  medicationName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#C5A14E', // Dark gold for major text
-  },
-  medicationDetails: {
-    fontSize: 14,
-    color: '#FFFFFF', // White for minor text
-  },
-  medicationTime: {
-    fontSize: 14,
-    color: '#FFFFFF', // White for minor text
-  },
-  contentContainer: {
-    paddingBottom: 80,
-  },
-  dashboardContainer: {
-    borderRadius: 20,
-    padding: 22,
-    marginBottom: 20,
-    backgroundColor: '#23262F', // deep gray
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    elevation: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(60, 65, 80, 0.5)', // subtle border
-    // Soft outer glow
-    shadowOpacity: 0.22,
-    shadowRadius: 22,
-  },
-  dashboardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerTextContainer: {
-    flex: 1,
-  },
-  dashboardTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#F4F6FB', // light for dark bg
-    letterSpacing: -0.2,
-    marginBottom: 4,
-    fontFamily: 'System',
-  },
   dashboardSubtitle: {
     fontSize: 14,
-    color: '#A1A7B3', // muted for subtitle
-    fontWeight: '400',
+    color: '#9CA3AF',
     fontFamily: 'System',
   },
   statsContainer: {
     marginTop: 8,
   },
-  statRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 0,
-    marginHorizontal: -6,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 6,
-  },
-  statPill: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    backgroundColor: 'rgba(74, 108, 247, 0.13)',
-    borderWidth: 1.5,
-    borderColor: '#313543',
-  },
-  statValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#F4F6FB',
-    marginTop: 2,
-    fontFamily: 'System',
-  },
-  statLabel: {
-    fontSize: 13,
-    color: '#A1A7B3',
-    fontWeight: '500',
-    letterSpacing: -0.2,
-    fontFamily: 'System',
-  },
-  progressSection: {
-    marginTop: 20,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  progressTitle: {
-    fontSize: 14,
-    color: '#1A1A1A',
-    fontWeight: '600',
-    letterSpacing: -0.2,
-  },
-  progressPercentage: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#4A6CF7',
-  },
-  progressBarContainer: {
-    height: 10,
-    backgroundColor: '#313543',
-    borderRadius: 5,
-    overflow: 'hidden',
-    marginBottom: 8,
-    marginTop: 2,
-  },
-  progressBar: {
-    height: '100%',
-    backgroundColor: '#4A6CF7',
-    borderRadius: 5,
-    transitionProperty: 'width',
-    transitionDuration: '0.4s',
-  },
-  progressSubtitle: {
-    fontSize: 12,
-    color: '#8E8E93',
-    fontWeight: '400',
-    letterSpacing: -0.2,
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 80,
-    right: 16,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#C5A14E', // Dark gold color
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 5,
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    margin: 20,
-    borderRadius: 10,
-    maxHeight: '80%',
-  },
-  modalScrollView: {
-    padding: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingRight: 10,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  closeButton: {
-    padding: 5,
-  },
-  inputContainer: {
-    width: '100%',
-  },
-  input: {
-    marginBottom: 15,
-    backgroundColor: 'white',
-    height: 50,
-    fontSize: 16,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  datePickerButton: {
-    marginVertical: 10,
-    backgroundColor: '#C5A14E',
-    height: 50,
-    justifyContent: 'center',
-  },
-  addButton: {
-    marginTop: 10,
-    backgroundColor: '#C5A14E',
-    height: 50,
-    justifyContent: 'center',
-  },
-  testButton: {
-    backgroundColor: '#C5A14E',
-    padding: 10,
-    borderRadius: 5,
-    marginTop: 10,
-    alignItems: 'center',
-  },
-  testButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
+  contentContainer: {
+    paddingBottom: 80,
   },
 });
 

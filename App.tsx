@@ -1,4 +1,4 @@
-// App.tsx - Professional Integration
+// App.tsx - Professional Integration (Updated for Simplified Background Tasks)
 import 'react-native-gesture-handler';
 import React, { useEffect, useRef } from 'react';
 import { Platform, View, LogBox, Alert } from 'react-native';
@@ -11,8 +11,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { configureNotifications, rescheduleAllNotifications } from './src/services/notificationService';
-import { initializeBackgroundTasks } from './src/services/backgroundTasks';
+import { initializeBackgroundTasks } from './src/services/backgroundTasks'; // Updated import
 import { executeQuery } from './src/utils/database';
+
 // Ignore specific warnings
 LogBox.ignoreLogs([
   'Non-serializable values were found in the navigation state',
@@ -51,17 +52,17 @@ export default function App() {
         } else {
           console.log('✅ Notification permissions granted');
           
-          // Initialize professional background tasks
+          // Initialize SIMPLIFIED background tasks (reference approach)
           if (Device.isDevice) {
             try {
-              await initializeBackgroundTasks();
-              console.log('✅ Professional background tasks initialized');
+              await initializeBackgroundTasks(); // Simplified version
+              console.log('✅ Simple background tasks initialized (reference approach)');
             } catch (backgroundError) {
               console.error('⚠️ Background tasks failed to initialize:', backgroundError);
               // Continue without background tasks but notify user
               Alert.alert(
-                'Background Monitoring',
-                'Some advanced features may not be available. The app will still function for basic medication reminders.'
+                'Background Processing',
+                'Some features may not be available. The app will still function for basic medication reminders.'
               );
             }
           } else {
@@ -161,12 +162,14 @@ export default function App() {
       const today = new Date().toISOString().split('T')[0];
       const now = new Date().toISOString();
       
-      // Mark as taken late
+      // Mark as taken late using simplified approach
       await executeQuery(`
-        INSERT OR REPLACE INTO medication_statuses 
-        (medication_id, user_id, date, status, actual_time, notes)
-        VALUES (?, ?, ?, 'late', ?, 'Taken after missed dose alert')
-      `, [medicationId, currentUser.id, today, now]);
+        UPDATE medications 
+        SET daily_status = 'taken', 
+            last_taken_date = ?,
+            daily_notes = ?
+        WHERE id = ? AND user_id = ?
+      `, [now, 'Taken after missed dose alert', medicationId, currentUser.id]);
       
       Alert.alert('Recorded', 'Late dose has been recorded. Great job catching up!');
       
@@ -178,14 +181,14 @@ export default function App() {
   const handleSkippedDose = async (medicationId: number) => {
     try {
       const currentUser = JSON.parse(await AsyncStorage.getItem('currentUser') || '{}');
-      const today = new Date().toISOString().split('T')[0];
       
-      // Mark as skipped
+      // Mark as skipped using simplified approach
       await executeQuery(`
-        INSERT OR REPLACE INTO medication_statuses 
-        (medication_id, user_id, date, status, notes)
-        VALUES (?, ?, ?, 'skipped', 'Intentionally skipped by user')
-      `, [medicationId, currentUser.id, today]);
+        UPDATE medications 
+        SET daily_status = 'skipped',
+            daily_notes = ?
+        WHERE id = ? AND user_id = ?
+      `, ['Intentionally skipped by user', medicationId, currentUser.id]);
       
       Alert.alert('Recorded', 'Dose marked as skipped.');
       

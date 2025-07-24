@@ -170,6 +170,25 @@ const requestNotificationPermission = async (): Promise<boolean> => {
 // **SIMPLE FIX: Use DAILY triggers like the GitHub project**
 // Replace your scheduleMedicationNotification function with this:
 
+// Setup notification categories for actionable buttons
+const setupNotificationCategories = async () => {
+  await Notifications.setNotificationCategoryAsync('MEDICATION_ACTIONS', [
+    {
+      identifier: 'TAKE_ACTION',
+      buttonTitle: 'Taken ✅',
+      options: { opensAppToForeground: false },
+    },
+    {
+      identifier: 'SKIP_ACTION',
+      buttonTitle: 'Skip ⏭️',
+      options: { opensAppToForeground: false },
+    },
+  ]);
+};
+
+// Call setupNotificationCategories at startup (should be called in App.tsx or main entry)
+setupNotificationCategories();
+
 const scheduleMedicationNotification = async (medication: MedicationNotification) => {
   try {
     console.log('🔔 Scheduling DAILY notification for:', medication.name);
@@ -195,6 +214,14 @@ const scheduleMedicationNotification = async (medication: MedicationNotification
         body: `Time to take ${medication.dosage} of ${medication.name}`,
         sound: 'default',
         priority: Notifications.AndroidNotificationPriority.HIGH,
+        data: {
+          medicationId: medication.id?.toString(),
+          type: 'medication_reminder',
+          scheduledFor: new Date().toISOString(),
+          status: 'pending',
+          action: 'TAKE_MEDICATION',
+        },
+        categoryIdentifier: 'MEDICATION_ACTIONS',
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -358,6 +385,25 @@ const debugNotificationService = {
     console.log('✅ All notifications cleared');
   }
 };
+
+// Notification response handler to update medication status
+Notifications.addNotificationResponseReceivedListener(async response => {
+  const { actionIdentifier, notification } = response;
+  const { medicationId } = notification.request.content.data || {};
+  if (!medicationId) return;
+  try {
+    if (actionIdentifier === 'TAKE_ACTION') {
+      // Mark as taken via backgroundTasks
+      const { markMedicationTaken } = await import('./backgroundTasks');
+      await markMedicationTaken(parseInt(medicationId), 'Taken via notification');
+    } else if (actionIdentifier === 'SKIP_ACTION') {
+      const { markMedicationSkipped } = await import('./backgroundTasks');
+      await markMedicationSkipped(parseInt(medicationId), 'Skipped via notification');
+    }
+  } catch (err) {
+    console.error('Error handling notification action:', err);
+  }
+});
 
 export {
   configureNotifications,
